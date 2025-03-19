@@ -171,7 +171,7 @@ TABLE III and TABLE IV both summarize the collection of all the key metric value
 \end{tabular}
 \end{table}
 
-\subsection{Overall Patterns}
+## Overall Patterns
 The analysis identifies critical vulnerabilities in Baxter WIP and Hexoskin SHS to MITM attacks, leading to packet loss, performance degradation, and network disruption. WIP experiences high PDV under MITM and DoS, while SHS suffers disruptions from DoS/DDoS. Unlike other attacks, MITM poses the highest risk, potentially compromising patient safety by altering drug dosages and device readings.
 
 Robust security is essential to prevent data manipulation. While blockchain authentication enhances security, its complexity and energy demands make it unsuitable for resource-limited IoMT devices. Alternative preventative solutions -Deep Packet Inspection (DPI), Network Behavioral Analysis (NBA), Network Anomaly Detection (NAD), Network Detection and Respeonse (NDR) \cite{c21}  \cite{c23},- and improved packet cleansing, encapsulation, and encryption for mitigation, should be explored for resilient IoMT security in healthcare \cite{c24}  \cite{c25}.
