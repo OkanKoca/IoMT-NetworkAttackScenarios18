@@ -1,5 +1,5 @@
 # IoMT-Network_Attack_Scenarios
-This study simulates four attack scenarios—DoS, DDoS (UDP Flooding), MITM, and Blackhole—on an IoMT network using NS-3.
+This study simulates four attack scenarios—DoS, DDoS (UDP Flooding), MITM, Blackhole and MQTT DoS (Command Injection)—on an IoMT network using NS-3.
 In a controlled sandbox environment, it evaluates the network Throughput, One-Way Delay
 (OWD), Packet Delay Variation (PDV), and Packet loss for a Baxter WIP and a Hexoskin SHS. Graphical results illustrate network degradation under
 attacks. The findings identify network vulnerabilities and propose controls to both enhance IoMT
