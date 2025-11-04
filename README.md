@@ -16,7 +16,8 @@ This section presents a comparative performance analysis of the four simulated I
 ### Network Throughput
 The consolidated network throughput from all five scenarios on both targeted device nodes are summarized on projected graphs shown in Fig. 3 and Fig. 4 respectively.
 
-<img width="190" height="116" alt="image" src="https://github.com/user-attachments/assets/6986670a-1ac1-4a52-9a21-6eda73fe6f90" />
+<img width="305" height="205" alt="image" src="https://github.com/user-attachments/assets/e862078e-4f1c-488c-9a2b-18e75745b25e" />
+
 
 Throughput analysis of the Baxter WIP shows significant degradation under all attacks, with BH and DDoS UDP floods reducing throughput to near zero by Flow ID 3, while NORMAL conditions maintain high performance.  
 
@@ -28,7 +29,7 @@ The graphs in Fig. 5 and Fig. 6 illustrate the comparative performance analysis 
 
 OWD analysis of WIP and SHS in IoMT networks reveals distinct delay patterns under various attack scenarios. For WIP, NORMAL conditions exhibit stable delays, BH causes no delay, MITM disrupts packets without affecting delay beyond Flow ID 1, DoS introduces moderate delays peaking at Flow ID 3, and DDoS maintains a consistent OWD. Similarly, SHS under NORMAL conditions shows a stable 2s delay, while DoS leads to significant (20s) delays, DDoS induces moderate (10s) delays at Flow ID 2, MITM has no impact, and BH introduces an initial 5s delay with no further effects.
 
-<img width="170" height="115" alt="image" src="https://github.com/user-attachments/assets/e2e215b7-f4e6-4885-9704-be05fb42d100" />
+<img width="359" height="250" alt="image" src="https://github.com/user-attachments/assets/53dd3462-d8e2-4c1f-8b82-3e6244cba98f" />
 
  
 ### Packet Delay Variation (PDV)
