@@ -12,6 +12,94 @@ This study design simulates a wireless IoMT network using the WLAN 802.11 protoc
 
 <img width="1375" height="712" alt="image" src="https://github.com/user-attachments/assets/cceaea07-9835-4517-b8b9-64f5854a93e9" />
 
+## Network Attack Model Scenarios
+### DoS UDP Flooding Attack:
+The attack was simulated on each network node, with one node as the attacker. Configured with the
+UDPEchoClientHelper class (as per pseudo-code in Listing 1.4), the attacker transmitted excessive 1024-
+byte packets at 0.01-second intervals, with a maximum limit of 1,000,000 packets, as implemented in
+NS-3,. The attack aims to exhaust the resources of the target node (e.g. bandwidth) and interfere with
+legitimate traffic by producing excessive UDP traffic[16].
+#### Expected Impact: 
+A UDP flood attack can degrade the target node performance, leading to network
+disconnection, memory exhaustion, and device malfunction. In a WIP real-world setting, this could result
+in incorrect or delayed medication dosages, threatening patient safety. On the Hexoskin device, it may
+cause delayed or inaccurate health readings, compromising reliability.
+### DDoS UDP Flooding Attack:
+The attack was simulated on all nodes, targeting each device individually. Unlike the previous DoS attack,
+multiple attacker nodes flood the target node with excessive UDP traffic. The attack loop iterates over all
+nodes in the attacker container, with each node configured using the UDPEchoClientHelper class in
+NS-3 to generate UDP traffic and install the attack application (as per pseudo-code in Listing 1.5).
+Expected Impact: Similar to the single-node DoS UDP flood, this attack can deplete network performance,
+saturating bandwidth, deny node resources, and overload memory, affecting device functionality
+[16]. On the WIP, it could delay medical infusion delivery, while the Hexoskin SHS may produce inaccurate
+health readings. Excessive traffic may crash both devices, complicating mitigation. Table 2 compares the
+impact of the UDP flooding attack between single-node DoS and multiple-node DDoS scenarios.
+Table 2. Comparative Impact of DoS and DDoS UDP Flooding Attacks
+Impact Factor DoS UDP
+Flood
+DDoS UDP
+Flood
+Traffic Volume Single attack source Multiple attacking
+nodes
+Detection Easier to identify Harder; requires
+network-wide analysis
+Impact Scope Localized to one
+node
+Affects entire network
+Mitigation Simple rate-limiting Needs load balancing,
+clustering
+### MITM Attack:
+This MITM attack intercepts, modifies, and forwards packets from target nodes using the MITMCallBack
+function, linked to the attacker node for packet handling, as shown in Listing 1.6.
+The attacker node modifies the first byte of packets and drops any exceeding 512 bytes; smaller
+packets are then forwarded. The MITMNode CallBack function, linked to the attacker node, handles
+packet reception (see Listing 1.7 ).
+#### Expected Impact: 
+This attack compromises packet integrity, causing packet loss, data corruption, and
+misinterpretation of device applications. In real-world scenarios, the Baxter WIP could issue incorrect
+drug commands, while the Hexoskin SHS may transmit inaccurate health metrics.
+### Blackhole (BH) Attack:
+The BH attack was simulated with a MITM attacker node intercepting and manipulating traffic to assess
+network vulnerabilities. The attacker exploits IP routing tables, inspecting and analyzing packets, and
+selectively dropping or forwarding them using the MitmInterceptAndDrop function (shown in Listing
+1.8 ), disrupting legitimate communication.
+#### Expected Impact: 
+Packet drops cause communication failure and denial of service on the target node,
+while other traffic remains unaffected. This results in delays in critical medical data transmission, minimal
+packet loss, and reduced network throughput, with no notable impact on non-targeted nodes [16].
+The simulated attacks on the IoMT network are implemented in C++ and NS-3, with Python scripts
+that generate the results for the performance analysis. The code is available on GitHub [17].
+### MQTT DoS Broker Flood (Command Injection) Attack:
+This attack simulates a command injection that floods the MQTT broker with excessive messages, causing
+a Denial-of-Service (DoS) by overloading and crashing the system. It disrupts communication for IoMT
+devices like Baxter WIP and Hexoskin SHS, leading to traffic delays or signal inconsistencies that may
+delay commands or produce inaccurate diagnostics, risking patient misdiagnosis. Considering that NS-3
+lacks native MQTT support [18], UDP traffic models the MQTT message flow and broker overload. The
+attack is implemented using a malicious UDP client that sends high rate, oversized PUBLISH messages
+that are larger the default 256 MB MQTT payload to the broker (UDP server), simulating malformed
+MQTT packets, as shown in Listing 1.9. and see Listing 1.10.
+#### Expected Impact: 
+The MQTT flood attack degrades IoMT network performance by overwhelming the
+broker with high-rate, oversized messages, causing around 10% packet loss, increased latency, reduced
+throughput, and potential DoS conditions for devices like the WIP and SHS. Beyond disrupting critical
+medical communications, it also floods blockchain logs and triggers intrusion alerts, simulating a realistic
+and severe cyberthreats to medical IoMT environments.
+
+### Energy Monitoring of IoMT Devices
+To assess the energy efficiency of wearable IoMT devices under normal and attack conditions, a custom
+BluetoothEnergyModel was developed in NS-3 [19] [20], and applied to the Hexoskin Smart Health Shirt
+(SHS), which uses Bluetooth Low Energy (BLE) as shown in see Listing 1.11. The model simulates battery
+consumption by defining three states—IDLE (0.01 A), TRANSMITTING (0.15 A), and RECEIVING
+(0.12 A)—at a constant operating voltage of 3.0 V, capturing realistic BLE behavior in both benign and
+adversarial scenarios.
+
+The BluetoothEnergyModel was linked to the energy source and set to alternate between TRANSMITTING
+(0.2s) and IDLE (4.8s) every 5 seconds, simulating periodic data transmission typical of
+real-world Bluetooth sensors as shown in Listing 1.12. This scheduling in NS-3 ensures consistent, repeatable
+energy usage throughout the simulation.
+To monitor battery, drain or consumption, the simulation also includes a RemainingEnergyCallback
+function (shown in Listing 1.13 ) that logs the remaining energy of each node, including the SHS node
+(HexoskinNode.Get(0)) at every interval.
 
 ## Network Performance Analysis
 This section presents a comparative performance analysis of the four simulated IoMT network attack scenarios targeting both the Baxter WIP, and the Hexoskin SHS devices. Key metrics -Network Throughput, OWD, PDV, and Packet Loss - are analyzed from line graphs, with a NORMAL network scenario as a benchmark for comparison. The graphs are generated using a Python script with matplotlib and pandas, extracting flow monitor statistics from XML files, and producing a CSV file of key metric values against Flow IDs. The analysis of these results are discussed below.
