@@ -125,7 +125,7 @@ This section presents a comparative performance analysis of the four simulated I
 ### Network Throughput
 The consolidated network throughput from all five scenarios on both targeted device nodes are summarized on projected graphs shown in Fig. 3 and Fig. 4 respectively.
 
-<img width="305" height="205" alt="image" src="https://github.com/user-attachments/assets/e862078e-4f1c-488c-9a2b-18e75745b25e" />
+<img width="225" height="101" alt="image" src="https://github.com/user-attachments/assets/62c14eee-bd3d-4ebc-b656-e4faedd57f94" />
 
 
 Throughput analysis of the Baxter WIP shows significant degradation under all attacks, with BH and DDoS UDP floods reducing throughput to near zero by Flow ID 3, while NORMAL conditions maintain high performance.  
