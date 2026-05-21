@@ -145,12 +145,12 @@ Consolidating the PDV from all five scenarios, the
 graphs are shown on Fig. 7 and Fig. 8.
 
 <img width="1000" height="600" alt="image" src="https://github.com/user-attachments/assets/ecc51183-11e1-4f9a-a277-6b2a8b7575b9" />
-##### Fig. 5. Comparative Packet Delay Variation (PDV) graph of Simulated IoMT Network Attack Scenarios targeting the Baxter WIP
+#### Fig. 5 Comparative Packet Delay Variation (PDV) graph of Simulated IoMT Network Attack Scenarios targeting the Baxter WIP
 
 PDV analysis of the WIP shows that DoS and MITM attacks cause significant PDV at Flow ID 1, unlike NORMAL and DDoS scenarios. The BH attack results in minimal PDV, which stabilizes across flow IDs, while DDoS has no significant effect. For the SHS, the NORMAL network shows minimal PDV, indicating optimal performance. DoS causes the highest PDV (0.6 seconds) at Flow ID 1, disrupting the network, while DDoS and MITM induce moderate PDV (0.3 seconds), with MITM recovering quickly. BH exhibits minimal PDV, similar to NORMAL conditions.
 
 <img width="1000" height="600" alt="image" src="https://github.com/user-attachments/assets/3d61fc15-fc48-40af-89a7-f156a617eac1" />
-##### Fig. 6. Comparative Packet Delay Variation (PDV) graph of Simulated IoMT Network Attack Scenarios targeting the Hexoskin SHS
+#### Fig. 6 Comparative Packet Delay Variation (PDV) graph of Simulated IoMT Network Attack Scenarios targeting the Hexoskin SHS
 
 
 ### Packet Loss
