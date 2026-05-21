@@ -135,28 +135,26 @@ For Hexoskin SHS, throughput starts at 2 Mbps under NORMAL conditions and stabil
 ### One-Way Delay (OWD)
 The graphs in Fig. 5 and Fig. 6 illustrate the comparative performance analysis of OWD for all five network scenarios.
 
-
 OWD analysis of WIP and SHS in IoMT networks reveals distinct delay patterns under various attack scenarios. For WIP, NORMAL conditions exhibit stable delays, BH causes no delay, MITM disrupts packets without affecting delay beyond Flow ID 1, DoS introduces moderate delays peaking at Flow ID 3, and DDoS maintains a consistent OWD. Similarly, SHS under NORMAL conditions shows a stable 2s delay, while DoS leads to significant (20s) delays, DDoS induces moderate (10s) delays at Flow ID 2, MITM has no impact, and BH introduces an initial 5s delay with no further effects.
 
-<img width="359" height="250" alt="image" src="https://github.com/user-attachments/assets/53dd3462-d8e2-4c1f-8b82-3e6244cba98f" />
+<img width="1000" height="600" alt="image" src="https://github.com/user-attachments/assets/c9d67b8e-bbcb-4517-ad51-40dcbd76aa4e" />
 
  
 ### Packet Delay Variation (PDV)
 Consolidating the PDV from all five scenarios, the 
 graphs are shown on Fig. 7 and Fig. 8.
 
-<img width="297" height="191" alt="image" src="https://github.com/user-attachments/assets/429f5b15-7bbf-41e7-a197-f92d5ce8c940" />
-
+<img width="1000" height="600" alt="image" src="https://github.com/user-attachments/assets/ecc51183-11e1-4f9a-a277-6b2a8b7575b9" />
 
 PDV analysis of the WIP shows that DoS and MITM attacks cause significant PDV at Flow ID 1, unlike NORMAL and DDoS scenarios. The BH attack results in minimal PDV, which stabilizes across flow IDs, while DDoS has no significant effect. For the SHS, the NORMAL network shows minimal PDV, indicating optimal performance. DoS causes the highest PDV (0.6 seconds) at Flow ID 1, disrupting the network, while DDoS and MITM induce moderate PDV (0.3 seconds), with MITM recovering quickly. BH exhibits minimal PDV, similar to NORMAL conditions.
 
-<img width="311" height="197" alt="image" src="https://github.com/user-attachments/assets/d37655f2-d958-49ed-8fe3-728899fdfc09" />
+<img width="1000" height="600" alt="image" src="https://github.com/user-attachments/assets/3d61fc15-fc48-40af-89a7-f156a617eac1" />
 
 
 ### Packet Loss
 A detailed packet loss analysis was performed in all scenarios, as shown on the projected graph in Fig. 9.
 
-<img width="367" height="223" alt="image" src="https://github.com/user-attachments/assets/a7668af1-9a00-452c-a6a9-65cdb020358f" />
+<img width="1000" height="600" alt="image" src="https://github.com/user-attachments/assets/33b4f457-5d67-496d-aec0-515f7e6d05f6" />
 
 On the WIP, analysis shows that the MITM attack causes total packet loss and network failure, while DoS and BH attacks result in no packet loss, demonstrating resilience to these threats. Similarly, the SHS does not show packet loss under DoS, DDoS, and BH attacks, indicating robust performance. However, the MITM attack leads to packet loss 100\% in Flow ID 1, revealing a critical vulnerability and highlighting the need for enhanced security against MITM attacks. 
 
