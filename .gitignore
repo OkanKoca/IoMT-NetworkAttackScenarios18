@@ -1,8 +1,12 @@
-# --- NS-3 raw run outputs (keep curated copies under my-work/ instead) ---
+# --- NS-3 raw run outputs ---
+# Big/reproducible artifacts: ignored EVERYWHERE (incl. my-work/).
 *.pcap
 network-anim*.xml
 iproute-anim*.xml
-flowmonitor-stats*.xml
+# FlowMonitor XML: ignore only stray copies at the repo ROOT & scratch runs;
+# curated ones under my-work/ (leading slash = root-anchored) stay TRACKED.
+/flowmonitor-stats*.xml
+/*.flowmon.xml
 
 # --- Python ---
 __pycache__/
@@ -21,7 +25,3 @@ docs/
 *~
 .vscode/
 .idea/
-
-# Curated own-run outputs under my-work/ ARE tracked on purpose —
-# override the run-artifact patterns above for anything inside my-work/.
-!my-work/**
