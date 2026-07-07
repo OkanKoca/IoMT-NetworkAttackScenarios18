@@ -1,0 +1,27 @@
+# --- NS-3 raw run outputs (keep curated copies under my-work/ instead) ---
+*.pcap
+network-anim*.xml
+iproute-anim*.xml
+flowmonitor-stats*.xml
+
+# --- Python ---
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# --- Local-only working context (not part of the fork) ---
+CLAUDE.md
+docs/
+
+# --- OS / editor cruft ---
+.DS_Store
+*.swp
+*~
+.vscode/
+.idea/
+
+# Curated own-run outputs under my-work/ ARE tracked on purpose —
+# override the run-artifact patterns above for anything inside my-work/.
+!my-work/**
