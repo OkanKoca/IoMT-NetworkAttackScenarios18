@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+"""
+build_dataset.py
+--------------------------------------------------------------------------
+FlowMonitor XML -> labeled flow dataset for the attack detector.
+
+Two-layer output (see docs/07):
+  * flows.csv   : lossless intermediate, one row per flow per run (transparency)
+  * dataset.csv : one row per RUN, a run-level feature vector (what the model sees)
+
+Each input XML is described by a manifest row (file, scenario, intensity, run),
+so scenario/intensity/run metadata never has to be parsed out of filenames.
+
+Usage:
+  python3 build_dataset.py --manifest manifest.csv --outdir out
+--------------------------------------------------------------------------
+"""
+
+import argparse
+import os
+import xml.etree.ElementTree as ET
+
+import pandas as pd
+
+# Destination-port -> semantic role. Mapping by *destination* port is
+# scenario-agnostic: the source IP changes (STA2 vs relay), but the role a flow
+# plays is fixed by where it is headed. (docs/07)
+PORT_ROLE = {
+    8080: "pump",       # control traffic delivered to the infusion pump
+    7070: "relay_in",   # control traffic arriving at the grey-hole relay (grey-hole only)
+    9090: "telemetry",  # untouched low-priority telemetry (contrast flow)
+    9: "flood",         # DoS/DDoS flood target port
+}
+
+
+def ns_to_s(text):
+    """Parse a FlowMonitor time/duration string like '+1.61368e+09ns' to seconds.
+
+    Kept as one function because this unit parse recurs for every time field;
+    getting it right in a single place avoids silent per-field mistakes.
+    """
+    return float(text.replace("ns", "").replace("+", "")) / 1e9
+
+
+def parse_xml(path):
+    """Return a list of per-flow dicts, joining FlowStats with the classifier.
+
+    Metrics live in <FlowStats>, the 5-tuple (and destination port) lives in
+    <Ipv4FlowClassifier>; they share flowId, so we join on it.
+    """
+    root = ET.parse(path).getroot()
+
+    # 5-tuple table: flowId -> classifier attributes
+    clsf = {}
+    for f in root.find("Ipv4FlowClassifier").findall("Flow"):
+        clsf[int(f.get("flowId"))] = {
+            "src": f.get("sourceAddress"),
+            "dst": f.get("destinationAddress"),
+            "dst_port": int(f.get("destinationPort")),
+        }
+
+    flows = []
+    for f in root.find("FlowStats").findall("Flow"):
+        fid = int(f.get("flowId"))
+        c = clsf.get(fid, {})
+        tx = int(f.get("txPackets"))
+        rx = int(f.get("rxPackets"))
+        lost = int(f.get("lostPackets"))
+        rx_bytes = int(f.get("rxBytes"))
+        # Per-flow ACTIVE window: the span the flow was actually delivering.
+        # Chosen over a fixed sim duration so idle tails don't dilute the rate
+        # (legit traffic stops at 20s while the sim runs to 30s). (decision: per-flow window)
+        t_first_tx = ns_to_s(f.get("timeFirstTxPacket"))
+        t_last_rx = ns_to_s(f.get("timeLastRxPacket"))
+        t_first_rx = ns_to_s(f.get("timeFirstRxPacket"))
+        window = t_last_rx - t_first_rx
+        delay_sum = ns_to_s(f.get("delaySum"))
+        jitter_sum = ns_to_s(f.get("jitterSum"))
+
+        dst_port = c.get("dst_port")
+        flows.append(
+            {
+                "flowId": fid,
+                "role": PORT_ROLE.get(dst_port, "other"),
+                "src": c.get("src"),
+                "dst": c.get("dst"),
+                "dst_port": dst_port,
+                "tx": tx,
+                "rx": rx,
+                "lost": lost,
+                "rx_bytes": rx_bytes,
+                "t_first_tx": t_first_tx,
+                "t_last_rx": t_last_rx,
+                # bit/s -> Mbit/s over the flow's own active window; guard empty window.
+                "throughput_mbps": (rx_bytes * 8.0 / window / 1e6) if window > 0 else 0.0,
+                # mean one-way delay and mean packet-delay-variation, in ms.
+                "owd_ms": (delay_sum / rx * 1000.0) if rx > 0 else 0.0,
+                "pdv_ms": (jitter_sum / rx * 1000.0) if rx > 0 else 0.0,
+            }
+        )
+    return flows
+
+
+def _delivery_ratio(flows):
+    """End-to-end delivery ratio of the control (medical) path.
+
+    Grey-hole splits the path in two (control->relay on 7070, relay->pump on 8080),
+    so the honest end-to-end ratio joins them: delivered_by_pump / sent_to_relay.
+    When there is no relay hop (normal/DoS) it is the pump flow's own rx/tx.
+    A fully-denied path (blackhole, p=1) has traffic into the relay but no pump
+    flow -> ratio 0, which is exactly right. (docs/05)
+    """
+    relay_in = [f for f in flows if f["role"] == "relay_in"]
+    pump = [f for f in flows if f["role"] == "pump"]
+    rx_pump = sum(f["rx"] for f in pump)
+    if relay_in:
+        tx_in = sum(f["tx"] for f in relay_in)
+        return rx_pump / tx_in if tx_in > 0 else float("nan")
+    if pump:
+        tx_pump = sum(f["tx"] for f in pump)
+        return rx_pump / tx_pump if tx_pump > 0 else float("nan")
+    return float("nan")
+
+
+def run_features(flows, meta):
+    """Reduce a run's flows to one labeled run-level feature vector (3 modalities)."""
+    total_tx = sum(f["tx"] for f in flows)
+    total_lost = sum(f["lost"] for f in flows)
+    run_window = max(f["t_last_rx"] for f in flows) - min(f["t_first_tx"] for f in flows)
+    total_rx_bytes = sum(f["rx_bytes"] for f in flows)
+
+    # The medical delivery flow (port 8080) carries the timing signal we care about;
+    # pick the busiest one if several exist.
+    pump_flows = [f for f in flows if f["role"] == "pump"]
+    control = max(pump_flows, key=lambda f: f["rx"]) if pump_flows else None
+    tele = next((f for f in flows if f["role"] == "telemetry"), None)
+    active = [f for f in flows if f["rx"] > 0]
+
+    row = {
+        # --- metadata (not features) ---
+        "run_id": f"{meta['scenario']}_i{meta['intensity']}_r{meta['run']}",
+        "scenario": meta["scenario"],
+        "intensity": meta["intensity"],
+        "run": meta["run"],
+        # --- volume / structure ---
+        "n_flows": len(flows),
+        "total_throughput_mbps": (total_rx_bytes * 8.0 / run_window / 1e6) if run_window > 0 else 0.0,
+        "max_flow_throughput_mbps": max((f["throughput_mbps"] for f in flows), default=0.0),
+        "max_flow_txpackets": max((f["tx"] for f in flows), default=0),
+        "flow_concentration": (max((f["tx"] for f in flows), default=0) / total_tx) if total_tx > 0 else 0.0,
+        # --- delivery integrity ---
+        "delivery_ratio": _delivery_ratio(flows),
+        "overall_loss_ratio": (total_lost / total_tx) if total_tx > 0 else 0.0,
+        # --- timing ---
+        "control_owd_ms": control["owd_ms"] if control else float("nan"),
+        "control_pdv_ms": control["pdv_ms"] if control else float("nan"),
+        "mean_owd_ms": (sum(f["owd_ms"] for f in active) / len(active)) if active else float("nan"),
+        "mean_pdv_ms": (sum(f["pdv_ms"] for f in active) / len(active)) if active else float("nan"),
+        # --- contrast ---
+        "telemetry_throughput_mbps": tele["throughput_mbps"] if tele else 0.0,
+        # --- labels ---
+        "label_class": meta["scenario"],
+        "label_binary": "normal" if meta["scenario"] == "normal" else "attack",
+    }
+    return row
+
+
+def main():
+    ap = argparse.ArgumentParser(description="FlowMonitor XML -> labeled flow dataset")
+    ap.add_argument("--manifest", default="manifest.csv", help="CSV: file,scenario,intensity,run")
+    ap.add_argument("--outdir", default="out", help="output directory for flows.csv/dataset.csv")
+    args = ap.parse_args()
+
+    manifest = pd.read_csv(args.manifest)
+    base = os.path.dirname(os.path.abspath(args.manifest))
+    os.makedirs(args.outdir, exist_ok=True)
+
+    flow_rows, run_rows = [], []
+    for _, m in manifest.iterrows():
+        meta = {"scenario": m["scenario"], "intensity": m["intensity"], "run": int(m["run"])}
+        xml_path = os.path.join(base, m["file"])
+        flows = parse_xml(xml_path)
+
+        run_id = f"{meta['scenario']}_i{meta['intensity']}_r{meta['run']}"
+        for f in flows:
+            flow_rows.append({"run_id": run_id, **meta, **f})
+        run_rows.append(run_features(flows, meta))
+
+    pd.DataFrame(flow_rows).to_csv(os.path.join(args.outdir, "flows.csv"), index=False)
+    dataset = pd.DataFrame(run_rows)
+    dataset.to_csv(os.path.join(args.outdir, "dataset.csv"), index=False)
+
+    print(f"Parsed {len(manifest)} runs -> {len(flow_rows)} flow rows.")
+    print(f"Wrote {args.outdir}/flows.csv and {args.outdir}/dataset.csv\n")
+    with pd.option_context("display.width", 200, "display.max_columns", 40):
+        print(dataset.to_string(index=False))
+
+
+if __name__ == "__main__":
+    main()

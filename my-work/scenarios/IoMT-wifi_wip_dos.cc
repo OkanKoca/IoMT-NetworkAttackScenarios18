@@ -19,7 +19,7 @@ int main(int argc, char *argv[]) {
     LogComponentEnable("FlowMonitor", LOG_LEVEL_INFO);  // Log flow monitor info
 
     // Set simulation parameters
-    double simulationTime = 40.0; // seconds
+    double simulationTime = 30.0; // seconds (normalized to the NORMAL/grey-hole baseline)
 
     // --- CLI parameters: RNG run (seed) + output filename ---------------------
     // NS-3 is deterministic by default, so without varying --run every
@@ -161,7 +161,7 @@ attackClient.SetAttribute("PacketSize", UintegerValue(1024));
 
 ApplicationContainer attackApp = attackClient.Install(attackerNode);
 attackApp.Start(Seconds(1.0));
-attackApp.Stop(Seconds(40.0));
+attackApp.Stop(Seconds(simulationTime)); // run for the full (normalized) sim duration
     
     NS_LOG_INFO("Attacker Node: " << attackerNode->GetId());
     NS_LOG_INFO("Target Node: " << targetNode->GetId());
