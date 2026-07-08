@@ -30,15 +30,20 @@ NS3_DIR = os.path.expanduser("~/ns-3-dev")
 SCEN_SRC = os.path.abspath(os.path.join(HERE, "..", "scenarios"))
 
 # --- Sweep configuration --------------------------------------------------
-N_SEEDS = 10                                     # replications per configuration
-P_GRID = [round(0.1 * i, 1) for i in range(11)]  # grey-hole: 0.0, 0.1, ..., 1.0
-DOS_INTENSITY = 100                              # nominal flood rate (pkt/s), fixed for now
+N_SEEDS = 10                                     # seeds for normal / dos / greyhole / blackhole
+P_GRID = [round(0.1 * i, 1) for i in range(11)]  # grey-hole intensity: p = 0.0 .. 1.0
+DOS_RATES = [10, 20, 50, 100, 200, 500, 1000]    # DoS intensity: flood rate (pkt/s)
+DDOS_NATTACKERS_GRID = [1, 2, 3, 5, 8]           # DDoS intensity: number of flooders
+DDOS_SEEDS = 5                                   # fewer seeds — DDoS runs are expensive
+BLACKHOLE_INTENSITY = 1.0                        # single point (= grey-hole p=1 endpoint)
 
-# Scenario -> (source file, ns-3 target name). Only the functional ones (docs/07).
+# Scenario -> (source file, ns-3 target name). The functional attacks (docs/07).
 SCENARIOS = {
     "normal": ("IoMT-wifi_wip.cc", "IoMT-wifi_wip"),
     "dos": ("IoMT-wifi_wip_dos.cc", "IoMT-wifi_wip_dos"),
     "greyhole": ("IoMT-wifi_grey.cc", "IoMT-wifi_grey"),
+    "ddos": ("IoMT-wifi_ddos.cc", "IoMT-wifi_ddos"),
+    "blackhole": ("IoMT-wifi_black.cc", "IoMT-wifi_black"),
 }
 
 
@@ -56,11 +61,17 @@ def build_all():
         sh(["./ns3", "build", target], stdout=subprocess.DEVNULL)
 
 
-def run_one(target, out_prefix, extra_args, dry):
-    """Run one configuration; XML lands at out_prefix + '.xml'."""
+def run_one(target, out_prefix, extra_args, dry, force):
+    """Run one configuration; XML lands at out_prefix + '.xml'.
+
+    Idempotent: skips a run whose XML already exists (unless --force), so an
+    interrupted sweep resumes without redoing the expensive DDoS runs.
+    """
     arg_str = " ".join([target] + extra_args + [f"--output={out_prefix}"])
     if dry:
         print(f'[dry] ./ns3 run "{arg_str}"')
+        return
+    if not force and os.path.exists(out_prefix + ".xml"):
         return
     sh(["./ns3", "run", "--no-build", arg_str], stdout=subprocess.DEVNULL)
 
@@ -68,6 +79,7 @@ def run_one(target, out_prefix, extra_args, dry):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="print commands, do not run")
+    ap.add_argument("--force", action="store_true", help="re-run even if the XML exists")
     args = ap.parse_args()
 
     os.makedirs(RAW, exist_ok=True)
@@ -75,29 +87,37 @@ def main():
         build_all()
 
     rows = []  # manifest rows
-    total = N_SEEDS * (2 + len(P_GRID))
-    done = 0
 
+    def do(target, name, extra_args, scenario, intensity, run):
+        run_one(target, os.path.join(RAW, name), extra_args, args.dry_run, args.force)
+        rows.append((f"raw/{name}.xml", scenario, intensity, run))
+
+    # NORMAL — baseline, seeds only (no intensity knob).
     for run in range(1, N_SEEDS + 1):
-        # NORMAL (no intensity knob)
-        name = f"normal_r{run}"
-        run_one("IoMT-wifi_wip", os.path.join(RAW, name), [f"--run={run}"], args.dry_run)
-        rows.append((f"raw/{name}.xml", "normal", 0, run))
+        do("IoMT-wifi_wip", f"normal_r{run}", [f"--run={run}"], "normal", 0, run)
 
-        # DoS (fixed nominal intensity, seed varies)
-        name = f"dos_r{run}"
-        run_one("IoMT-wifi_wip_dos", os.path.join(RAW, name), [f"--run={run}"], args.dry_run)
-        rows.append((f"raw/{name}.xml", "dos", DOS_INTENSITY, run))
+    # DoS — sweep the flood rate (intensity), seeds each.
+    for rate in DOS_RATES:
+        for run in range(1, N_SEEDS + 1):
+            do("IoMT-wifi_wip_dos", f"dos_rate{rate}_r{run}",
+               [f"--rate={rate}", f"--run={run}"], "dos", rate, run)
 
-        # Grey-hole across the p grid
-        for p in P_GRID:
-            name = f"greyhole_p{p}_r{run}"
-            run_one("IoMT-wifi_grey", os.path.join(RAW, name),
-                    [f"--p={p}", f"--run={run}"], args.dry_run)
-            rows.append((f"raw/{name}.xml", "greyhole", p, run))
+    # DDoS — sweep the flooder count (intensity), fewer seeds (expensive).
+    for na in DDOS_NATTACKERS_GRID:
+        for run in range(1, DDOS_SEEDS + 1):
+            do("IoMT-wifi_ddos", f"ddos_na{na}_r{run}",
+               [f"--nattackers={na}", f"--run={run}"], "ddos", na, run)
 
-        done += 2 + len(P_GRID)
-        print(f"[progress] seed {run}/{N_SEEDS}  ({done}/{total} runs)")
+    # Blackhole — single point (delivery axis is already swept by grey-hole).
+    for run in range(1, N_SEEDS + 1):
+        do("IoMT-wifi_black", f"blackhole_r{run}", [f"--run={run}"], "blackhole", BLACKHOLE_INTENSITY, run)
+
+    # Grey-hole — sweep the drop probability p (intensity), seeds each.
+    for p in P_GRID:
+        for run in range(1, N_SEEDS + 1):
+            do("IoMT-wifi_grey", f"greyhole_p{p}_r{run}",
+               [f"--p={p}", f"--run={run}"], "greyhole", p, run)
+        print(f"[progress] grey p={p} done ({len(rows)} rows so far)")
 
     # Write the manifest build_dataset.py consumes.
     with open(MANIFEST, "w") as fh:

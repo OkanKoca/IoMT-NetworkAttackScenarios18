@@ -26,8 +26,10 @@ int main(int argc, char *argv[]) {
     // replication produces identical results. Vary --run for statistically
     // independent replicas; --output keeps their FlowMonitor XMLs separate.
     uint32_t rngRun = 1;                          // independent replication ("seed")
+    double floodRate = 100.0;                     // attack intensity knob: flood packets/second
     std::string output = "flowmonitor-stats_dos"; // output XML prefix (no extension)
     CommandLine cmd;
+    cmd.AddValue("rate", "Flood rate in packets/second (attack intensity)", floodRate);
     cmd.AddValue("run", "RNG run number for an independent replication (seed)", rngRun);
     cmd.AddValue("output", "Output filename prefix, without .xml", output);
     cmd.Parse(argc, argv);
@@ -156,7 +158,7 @@ Ipv4Address targetAddress = wifiInterfaces.GetAddress(0);  // Get target node's 
 // Configure the UDP Echo Client for the DoS attack
 UdpEchoClientHelper attackClient(targetAddress, 9);
 attackClient.SetAttribute("MaxPackets", UintegerValue(1000000));
-attackClient.SetAttribute("Interval", TimeValue(Seconds(0.01))); // Flood rate
+attackClient.SetAttribute("Interval", TimeValue(Seconds(1.0 / floodRate))); // Flood rate (pkt/s)
 attackClient.SetAttribute("PacketSize", UintegerValue(1024));
 
 ApplicationContainer attackApp = attackClient.Install(attackerNode);
