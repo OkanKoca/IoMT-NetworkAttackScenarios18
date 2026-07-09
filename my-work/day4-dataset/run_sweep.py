@@ -30,7 +30,9 @@ NS3_DIR = os.path.expanduser("~/ns-3-dev")
 SCEN_SRC = os.path.abspath(os.path.join(HERE, "..", "scenarios"))
 
 # --- Sweep configuration --------------------------------------------------
-N_SEEDS = 10                                     # seeds for normal / dos / greyhole / blackhole
+N_SEEDS = 10                                     # seeds for dos / greyhole / blackhole
+NORMAL_SEEDS = 40                                # more normal runs: the binary detector's
+                                                 # negative class is otherwise tiny (~10 vs ~215)
 P_GRID = [round(0.1 * i, 1) for i in range(11)]  # grey-hole intensity: p = 0.0 .. 1.0
 DOS_RATES = [10, 20, 50, 100, 200, 500, 1000]    # DoS intensity: flood rate (pkt/s)
 DDOS_NATTACKERS_GRID = [1, 2, 3, 5, 8]           # DDoS intensity: number of flooders
@@ -92,8 +94,9 @@ def main():
         run_one(target, os.path.join(RAW, name), extra_args, args.dry_run, args.force)
         rows.append((f"raw/{name}.xml", scenario, intensity, run))
 
-    # NORMAL — baseline, seeds only (no intensity knob).
-    for run in range(1, N_SEEDS + 1):
+    # NORMAL — baseline, seeds only (no intensity knob). More seeds than the
+    # attacks so the detector's negative class is not starved.
+    for run in range(1, NORMAL_SEEDS + 1):
         do("IoMT-wifi_wip", f"normal_r{run}", [f"--run={run}"], "normal", 0, run)
 
     # DoS — sweep the flood rate (intensity), seeds each.
