@@ -145,6 +145,10 @@ GreyholeRelay::HandleRead(Ptr<Socket> socket)
         // Forward a fresh packet of the same size. Re-sending the received
         // object would carry its FlowMonitor tag and mis-classify the hop.
         // Create<Packet>(size) -> Ptr<Packet> of `size` zero-filled bytes.
+        // NOTE: zero-fill is intentional and fine for network-metric features
+        // (throughput, OWD, PDV, loss all depend on size/timing, not content).
+        // Payload is NOT preserved, so any future payload-based feature would
+        // silently break here and must copy the original bytes instead.
         Ptr<Packet> fresh = Create<Packet>(packet->GetSize());
         // Send(packet) -> bytes sent (>=0), or -1 on error. Goes to the peer
         // fixed by Connect() above (the pump).

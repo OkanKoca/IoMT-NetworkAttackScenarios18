@@ -137,7 +137,12 @@ def run_features(flows, meta):
     active = [f for f in flows if f["rx"] > 0]
 
     row = {
-        # --- metadata (not features) ---
+        # --- metadata (NOT features; must be dropped from X before training) ---
+        # `intensity` in particular is a per-attack knob whose UNITS differ by class:
+        # grey-hole drop-prob 0-1, DoS flood rate 10-1000 pkt/s, DDoS attacker count 1-8,
+        # blackhole 1. These share no common numeric axis, so feeding intensity as a model
+        # input is meaningless. It is kept ONLY to group/filter runs for the per-attack
+        # detection-vs-intensity curve. (see docs/09 §3)
         "run_id": f"{meta['scenario']}_i{meta['intensity']}_r{meta['run']}",
         "scenario": meta["scenario"],
         "intensity": meta["intensity"],
@@ -184,13 +189,32 @@ def main():
         run_id = f"{meta['scenario']}_i{meta['intensity']}_r{meta['run']}"
         for f in flows:
             flow_rows.append({"run_id": run_id, **meta, **f})
-        run_rows.append(run_features(flows, meta))
+        row = run_features(flows, meta)
+        # A NaN delivery_ratio means a broken run (no pump tx: crashed sim, wrong port,
+        # early termination), not a real 0% delivery. Surface it loudly with the offending
+        # file so it can be investigated rather than silently poisoning the feature vector.
+        if pd.isna(row["delivery_ratio"]):
+            print(f"WARNING: delivery_ratio is NaN for {m['file']} (run_id={run_id}) "
+                  "-> likely a broken run; investigate before training.")
+        run_rows.append(row)
 
     pd.DataFrame(flow_rows).to_csv(os.path.join(args.outdir, "flows.csv"), index=False)
     dataset = pd.DataFrame(run_rows)
     dataset.to_csv(os.path.join(args.outdir, "dataset.csv"), index=False)
 
-    print(f"Parsed {len(manifest)} runs -> {len(flow_rows)} flow rows.")
+    # Dataset-level NaN audit before the file is used for training. Some NaNs are EXPECTED
+    # (control_owd/pdv on fully-denied paths: blackhole, grey p=1 have no pump flow to time)
+    # and will be imputed + flagged with a missingness indicator at the ML stage. Any NaN in
+    # delivery_ratio here would instead signal a broken run.
+    nan_cols = dataset.columns[dataset.isna().any()].tolist()
+    if nan_cols:
+        print("NaN audit -> columns still containing NaN (with count):")
+        for c in nan_cols:
+            print(f"  {c}: {int(dataset[c].isna().sum())} run(s)")
+    else:
+        print("NaN audit -> no NaN in any column.")
+
+    print(f"\nParsed {len(manifest)} runs -> {len(flow_rows)} flow rows.")
     print(f"Wrote {args.outdir}/flows.csv and {args.outdir}/dataset.csv\n")
     with pd.option_context("display.width", 200, "display.max_columns", 40):
         print(dataset.to_string(index=False))

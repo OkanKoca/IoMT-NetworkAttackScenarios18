@@ -33,7 +33,12 @@ SCEN_SRC = os.path.abspath(os.path.join(HERE, "..", "scenarios"))
 N_SEEDS = 10                                     # seeds for dos / greyhole / blackhole
 NORMAL_SEEDS = 40                                # more normal runs: the binary detector's
                                                  # negative class is otherwise tiny (~10 vs ~215)
-P_GRID = [round(0.1 * i, 1) for i in range(11)]  # grey-hole intensity: p = 0.0 .. 1.0
+# grey-hole intensity: p = 0.1 .. 1.0. Deliberately excludes p=0.0: a grey-hole that
+# drops nothing is byte-for-byte identical to the normal baseline, so labelling it
+# 'greyhole'/'attack' would hand the model the same feature vector under two labels
+# (a contradiction, and exactly at the low-p end of the curve that matters most).
+# The normal baseline already covers p=0 behaviour.
+P_GRID = [round(0.1 * i, 1) for i in range(1, 11)]
 DOS_RATES = [10, 20, 50, 100, 200, 500, 1000]    # DoS intensity: flood rate (pkt/s)
 DDOS_NATTACKERS_GRID = [1, 2, 3, 5, 8]           # DDoS intensity: number of flooders
 DDOS_SEEDS = 5                                   # fewer seeds — DDoS runs are expensive
@@ -55,9 +60,23 @@ def sh(cmd, **kw):
 
 
 def build_all():
-    """Copy the latest scenario sources into scratch/ and build each once."""
+    """Copy the latest scenario sources into scratch/ and build each once.
+
+    Sources are authored in ../scenarios/ and copied into scratch/; we never edit
+    in scratch/ directly, so overwriting it is expected. Two guards make failures
+    legible: (1) verify every source exists up front so a typo/missing file raises
+    a clear error naming the file, not a cryptic `cp` failure mid-loop; (2) announce
+    each overwrite so a stray hand-edit in scratch/ can't vanish unnoticed.
+    """
+    missing = [src for src, _ in SCENARIOS.values()
+               if not os.path.exists(os.path.join(SCEN_SRC, src))]
+    if missing:
+        raise FileNotFoundError(f"Missing scenario source(s) in {SCEN_SRC}: {missing}")
     for src, _ in SCENARIOS.values():
-        sh(["cp", os.path.join(SCEN_SRC, src), os.path.join(NS3_DIR, "scratch", src)])
+        dst = os.path.join(NS3_DIR, "scratch", src)
+        if os.path.exists(dst):
+            print(f"[copy] overwriting scratch/{src}")
+        sh(["cp", os.path.join(SCEN_SRC, src), dst])
     for _, target in SCENARIOS.values():
         print(f"[build] {target}")
         sh(["./ns3", "build", target], stdout=subprocess.DEVNULL)
