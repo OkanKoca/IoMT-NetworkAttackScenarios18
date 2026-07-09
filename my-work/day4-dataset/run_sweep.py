@@ -33,12 +33,14 @@ SCEN_SRC = os.path.abspath(os.path.join(HERE, "..", "scenarios"))
 N_SEEDS = 10                                     # seeds for dos / greyhole / blackhole
 NORMAL_SEEDS = 40                                # more normal runs: the binary detector's
                                                  # negative class is otherwise tiny (~10 vs ~215)
-# grey-hole intensity: p = 0.1 .. 1.0. Deliberately excludes p=0.0: a grey-hole that
-# drops nothing is byte-for-byte identical to the normal baseline, so labelling it
-# 'greyhole'/'attack' would hand the model the same feature vector under two labels
-# (a contradiction, and exactly at the low-p end of the curve that matters most).
-# The normal baseline already covers p=0 behaviour.
-P_GRID = [round(0.1 * i, 1) for i in range(1, 11)]
+# grey-hole intensity: p = 0.1 .. 0.9. Excludes BOTH endpoints on purpose:
+#  * p=0.0 drops nothing -> byte-for-byte identical to the normal baseline (would be the
+#    same feature vector under two labels).
+#  * p=1.0 drops everything -> byte-for-byte identical to the blackhole class (feature
+#    duplicate). The blackhole scenario already covers the full-denial (p=1) endpoint, so
+#    the delivery-axis curve is: grey p=0.1..0.9 (greyhole) + blackhole as the p=1 point.
+# This keeps every class feature-distinct.
+P_GRID = [round(0.1 * i, 1) for i in range(1, 10)]
 DOS_RATES = [10, 20, 50, 100, 200, 500, 1000]    # DoS intensity: flood rate (pkt/s)
 DDOS_NATTACKERS_GRID = [1, 2, 3, 5, 8]           # DDoS intensity: number of flooders
 DDOS_SEEDS = 5                                   # fewer seeds — DDoS runs are expensive

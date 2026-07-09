@@ -126,8 +126,6 @@ def run_features(flows, meta):
     """Reduce a run's flows to one labeled run-level feature vector (3 modalities)."""
     total_tx = sum(f["tx"] for f in flows)
     total_lost = sum(f["lost"] for f in flows)
-    run_window = max(f["t_last_rx"] for f in flows) - min(f["t_first_tx"] for f in flows)
-    total_rx_bytes = sum(f["rx_bytes"] for f in flows)
 
     # The medical delivery flow (port 8080) carries the timing signal we care about;
     # pick the busiest one if several exist.
@@ -149,7 +147,12 @@ def run_features(flows, meta):
         "run": meta["run"],
         # --- volume / structure ---
         "n_flows": len(flows),
-        "total_throughput_mbps": (total_rx_bytes * 8.0 / run_window / 1e6) if run_window > 0 else 0.0,
+        # Sum of per-flow throughputs (each on its OWN active window), not total bytes over
+        # the run's union window. The union-window version dilutes: a low-rate flood extends
+        # the window (to ~30s) more than it adds bytes, so total throughput would DROP below
+        # normal for weak DoS -- a backwards signal. Summing per-flow rates keeps it monotonic
+        # in intensity and consistent with the per-flow active-window rule. (see docs/09 §5)
+        "total_throughput_mbps": sum(f["throughput_mbps"] for f in flows),
         "max_flow_throughput_mbps": max((f["throughput_mbps"] for f in flows), default=0.0),
         "max_flow_txpackets": max((f["tx"] for f in flows), default=0),
         "flow_concentration": (max((f["tx"] for f in flows), default=0) / total_tx) if total_tx > 0 else 0.0,
