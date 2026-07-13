@@ -6,15 +6,19 @@
  * Several attacker stations flood the infusion pump simultaneously, exhausting
  * the shared Wi-Fi medium so the legitimate control/telemetry flows degrade.
  * It differs from single-source DoS by the NUMBER of concurrent flooders
- * (--nattackers), which is its intensity knob and its structural signature
- * (many high-volume flows instead of one).
+ * (--nattackers), which is its structural signature (many flood flows instead
+ * of one). Per-attacker flood rate (--rate) is an independent knob: together
+ * they span an (attacker-count x rate) plane, so a k-attacker DDoS can be given
+ * the same TOTAL volume as a single-source DoS while differing in flow count —
+ * i.e. the true DoS/DDoS separator is the number of flooding flows, not volume.
  *
- * Fixes vs the study's version (verified broken in docs/07): the attacker
- * nodes there received an IP stack but NO Wi-Fi device and no address, so they
- * were interfaceless and sent nothing. Here they are real associated stations.
+ * Fixes vs the study's version (verified broken): the attacker nodes there
+ * received an IP stack but NO Wi-Fi device and no address, so they were
+ * interfaceless and sent nothing. Here they are real associated stations.
  *
  * Parameters:
- *   --nattackers  number of concurrent flooders (intensity knob)
+ *   --nattackers  number of concurrent flooders (structural knob)
+ *   --rate        per-attacker flood rate in pkt/s (volume knob; default 100)
  *   --run         RNG run number for an independent replication (seed)
  *   --output      output FlowMonitor XML prefix (without .xml)
  * ---------------------------------------------------------------------------
@@ -39,11 +43,13 @@ main(int argc, char* argv[])
     double simulationTime = 30.0; // seconds (matches the NORMAL/DoS/grey baseline)
 
     // --- CLI parameters ------------------------------------------------------
-    uint32_t nAttackers = 5;                         // intensity knob
+    uint32_t nAttackers = 5;                         // structural knob (flood-flow count)
+    uint32_t floodRate = 100;                        // per-attacker flood rate (pkt/s); volume knob
     uint32_t rngRun = 1;                             // independent replication (seed)
     std::string output = "flowmonitor-stats_ddos";   // output XML prefix (no ext.)
     CommandLine cmd;
-    cmd.AddValue("nattackers", "Number of concurrent DDoS flooders (intensity)", nAttackers);
+    cmd.AddValue("nattackers", "Number of concurrent DDoS flooders (structural knob)", nAttackers);
+    cmd.AddValue("rate", "Per-attacker flood rate in pkt/s (volume knob)", floodRate);
     cmd.AddValue("run", "RNG run number for an independent replication (seed)", rngRun);
     cmd.AddValue("output", "Output filename prefix, without .xml", output);
     cmd.Parse(argc, argv);
@@ -159,7 +165,7 @@ main(int argc, char* argv[])
     {
         UdpEchoClientHelper attackClient(targetAddress, 9); // flood target port 9
         attackClient.SetAttribute("MaxPackets", UintegerValue(1000000));
-        attackClient.SetAttribute("Interval", TimeValue(Seconds(0.01))); // 100 pkt/s each
+        attackClient.SetAttribute("Interval", TimeValue(Seconds(1.0 / floodRate))); // per-attacker flood rate (pkt/s)
         attackClient.SetAttribute("PacketSize", UintegerValue(1024));
         ApplicationContainer attackApp = attackClient.Install(attackerNodes.Get(i));
         attackApp.Start(Seconds(1.0));
