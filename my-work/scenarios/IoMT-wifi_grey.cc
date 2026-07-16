@@ -34,6 +34,8 @@
 #include "ns3/point-to-point-module.h"// wired P2P link (Hexoskin BLE emulation)
 #include "ns3/flow-monitor-module.h"  // per-flow statistics collection
 
+#include "iomt-noise.h"               // shared per-run stochasticity helpers
+
 using namespace ns3;
 
 // Registers a named log component so NS_LOG_* macros can target this file.
@@ -166,17 +168,25 @@ main(int argc, char* argv[])
     double dropProb = 0.0;                          // p: attack intensity knob
     uint32_t rngRun = 1;                            // independent replication (seed)
     std::string output = "flowmonitor-stats_grey";  // output XML prefix (no ext.)
+    // The ward's congestion driver; calibrated in iomt-noise.h (docs/18).
+    double heavyMbps = IOMT_HEAVY_MBPS;
+    double heavySpread = IOMT_HEAVY_SPREAD; // 0 = exactly heavyMbps (calibration)
     // CommandLine parses --key=value pairs; AddValue binds a flag to a variable.
     CommandLine cmd;
     cmd.AddValue("p", "Grey-hole drop probability (0.0 = none, 1.0 = blackhole)", dropProb);
     cmd.AddValue("run", "RNG run number for an independent replication (seed)", rngRun);
     cmd.AddValue("output", "Output filename prefix, without .xml", output);
+    cmd.AddValue("heavy", "Imaging/video gateway offered load in Mbps (0 = off)", heavyMbps);
+    cmd.AddValue("heavyspread", "Per-run fractional spread of the imaging rate", heavySpread);
     cmd.Parse(argc, argv); // overwrites the defaults above from argv
 
     // SetSeed fixes the base seed; SetRun picks an independent substream, so
     // different --run values give reproducible-but-different randomness.
     RngSeedManager::SetSeed(1);     // fixed base seed
     RngSeedManager::SetRun(rngRun); // independent random stream per run
+
+    // Before any Wi-Fi device exists: small, embedded-sized MAC queues.
+    LimitMacQueue();
 
     // --- Nodes ---------------------------------------------------------------
     // NodeContainer holds a set of nodes; Create(n) allocates n empty nodes.
@@ -192,6 +202,7 @@ main(int argc, char* argv[])
     // Helper pattern: *Helper classes are shortcut factories that wire the
     // low-level objects together and return device/interface containers.
     YansWifiChannelHelper channel = YansWifiChannelHelper::Default();
+    AddChannelFading(channel); // per-run Nakagami fading on top of log-distance
     YansWifiPhyHelper phy;
     phy.SetChannel(channel.Create()); // Create() -> Ptr<YansWifiChannel>
 
@@ -208,6 +219,11 @@ main(int argc, char* argv[])
     // Reconfigure the same MAC helper as an access point, install on the AP.
     mac.SetType("ns3::ApWifiMac", "Ssid", SsidValue(ssid));
     NetDeviceContainer apDevice = wifi.Install(phy, mac, wifiApNode);
+
+    // Per-run random packet loss on the legitimate receivers (STAs + AP): a real
+    // noise floor so baseline delivery is not deterministically 1.0.
+    AddReceiveNoise(wifiDevices);
+    AddReceiveNoise(apDevice);
 
     // --- Internet stack + addressing -----------------------------------------
     // InternetStackHelper adds IP/ARP/UDP/TCP to each node.
@@ -232,6 +248,7 @@ main(int argc, char* argv[])
                                   "LayoutType", StringValue("RowFirst"));
     mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
     mobility.Install(wifiNodes);
+    JitterPositions(wifiNodes); // small per-run position offset
     // AP + Hexoskin get an explicit single position at the origin.
     Ptr<ListPositionAllocator> apPosition = CreateObject<ListPositionAllocator>();
     apPosition->Add(Vector(0.0, 0.0, 0.0));
@@ -268,8 +285,11 @@ main(int argc, char* argv[])
     // High-priority control traffic (STA 2) — now aimed at the ATTACKER relay.
     // OnOffHelper generates a UDP stream toward the given remote address.
     OnOffHelper controlTraffic("ns3::UdpSocketFactory", relayAddress);
-    controlTraffic.SetAttribute("DataRate", StringValue("1Mbps"));   // send rate while "on"
-    controlTraffic.SetAttribute("PacketSize", UintegerValue(512));   // bytes per packet
+    // Patient-monitor ECG waveform: the real clinical profile is a low bit rate
+    // carried by many small packets (see IoMT-wifi_wip.cc for the full rationale).
+    // Packet COUNT is what sets how finely the drop probability p can be resolved,
+    // so this victim path stays deliberately packet-rich.
+    SetNoisyOnOff(controlTraffic, 128e3, 128); // per-run randomized rate/size/burst
     ApplicationContainer controlApp = controlTraffic.Install(wifiNodes.Get(2));
     controlApp.Start(Seconds(2.0)); // starts AFTER the relay is listening (1.0s)
     controlApp.Stop(Seconds(20.0));
@@ -290,11 +310,14 @@ main(int argc, char* argv[])
     smartphoneApp.Start(Seconds(2.0));
     smartphoneApp.Stop(Seconds(20.0));
     OnOffHelper smartphoneTraffic("ns3::UdpSocketFactory", smartphoneAddress);
-    smartphoneTraffic.SetAttribute("DataRate", StringValue("512Kbps"));
-    smartphoneTraffic.SetAttribute("PacketSize", UintegerValue(256));
+    SetNoisyOnOff(smartphoneTraffic, 64e3, 128); // per-run randomized rate/size/burst
     ApplicationContainer smartphoneTrafficApp = smartphoneTraffic.Install(hexoskinNodes.Get(0));
     smartphoneTrafficApp.Start(Seconds(3.0));
     smartphoneTrafficApp.Stop(Seconds(20.0));
+
+    // The rest of the ward: a random subset of the light medical devices plus the
+    // always-on imaging gateway (see iomt-noise.h for why that split matters).
+    InstallMedicalCrossTraffic(wifiNodes, wifiInterfaces, 2.0, 20.0, heavyMbps, heavySpread);
 
     // Computes global routing tables so STA2 -> STA8 -> STA0 paths resolve.
     Ipv4GlobalRoutingHelper::PopulateRoutingTables();

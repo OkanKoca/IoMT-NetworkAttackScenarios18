@@ -29,6 +29,8 @@
 #include "ns3/point-to-point-module.h"
 #include "ns3/flow-monitor-module.h"
 
+#include "iomt-noise.h"
+
 using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE("IoMTBlackhole");
@@ -76,13 +78,21 @@ main(int argc, char* argv[])
 
     uint32_t rngRun = 1;
     std::string output = "flowmonitor-stats_black";
+    // The ward's congestion driver; calibrated in iomt-noise.h (docs/18).
+    double heavyMbps = IOMT_HEAVY_MBPS;
+    double heavySpread = IOMT_HEAVY_SPREAD; // 0 = exactly heavyMbps (calibration)
     CommandLine cmd;
     cmd.AddValue("run", "RNG run number for an independent replication (seed)", rngRun);
     cmd.AddValue("output", "Output filename prefix, without .xml", output);
+    cmd.AddValue("heavy", "Imaging/video gateway offered load in Mbps (0 = off)", heavyMbps);
+    cmd.AddValue("heavyspread", "Per-run fractional spread of the imaging rate", heavySpread);
     cmd.Parse(argc, argv);
 
     RngSeedManager::SetSeed(1);
     RngSeedManager::SetRun(rngRun);
+
+    // Before any Wi-Fi device exists: small, embedded-sized MAC queues.
+    LimitMacQueue();
 
     // --- Nodes ---------------------------------------------------------------
     uint32_t numNodes = 9;
@@ -95,6 +105,7 @@ main(int argc, char* argv[])
 
     // --- Wi-Fi PHY / MAC -----------------------------------------------------
     YansWifiChannelHelper channel = YansWifiChannelHelper::Default();
+    AddChannelFading(channel); // per-run Nakagami fading on top of log-distance
     YansWifiPhyHelper phy;
     phy.SetChannel(channel.Create());
 
@@ -108,6 +119,11 @@ main(int argc, char* argv[])
     NetDeviceContainer wifiDevices = wifi.Install(phy, mac, wifiNodes);
     mac.SetType("ns3::ApWifiMac", "Ssid", SsidValue(ssid));
     NetDeviceContainer apDevice = wifi.Install(phy, mac, wifiApNode);
+
+    // Per-run random packet loss on the legitimate receivers (STAs + AP): a real
+    // noise floor so baseline delivery is not deterministically 1.0.
+    AddReceiveNoise(wifiDevices);
+    AddReceiveNoise(apDevice);
 
     // --- Internet stack + addressing -----------------------------------------
     InternetStackHelper stack;
@@ -129,6 +145,7 @@ main(int argc, char* argv[])
                                   "LayoutType", StringValue("RowFirst"));
     mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
     mobility.Install(wifiNodes);
+    JitterPositions(wifiNodes); // small per-run position offset
     Ptr<ListPositionAllocator> apPosition = CreateObject<ListPositionAllocator>();
     apPosition->Add(Vector(0.0, 0.0, 0.0));
     mobility.SetPositionAllocator(apPosition);
@@ -158,8 +175,9 @@ main(int argc, char* argv[])
 
     // Control traffic (STA 2) aimed at the attacker relay.
     OnOffHelper controlTraffic("ns3::UdpSocketFactory", relayAddress);
-    controlTraffic.SetAttribute("DataRate", StringValue("1Mbps"));
-    controlTraffic.SetAttribute("PacketSize", UintegerValue(512));
+    // Patient-monitor ECG waveform: the real clinical profile is a low bit rate
+    // carried by many small packets (see IoMT-wifi_wip.cc for the full rationale).
+    SetNoisyOnOff(controlTraffic, 128e3, 128); // per-run randomized rate/size/burst
     ApplicationContainer controlApp = controlTraffic.Install(wifiNodes.Get(2));
     controlApp.Start(Seconds(2.0));
     controlApp.Stop(Seconds(20.0));
@@ -179,11 +197,14 @@ main(int argc, char* argv[])
     smartphoneApp.Start(Seconds(2.0));
     smartphoneApp.Stop(Seconds(20.0));
     OnOffHelper smartphoneTraffic("ns3::UdpSocketFactory", smartphoneAddress);
-    smartphoneTraffic.SetAttribute("DataRate", StringValue("512Kbps"));
-    smartphoneTraffic.SetAttribute("PacketSize", UintegerValue(256));
+    SetNoisyOnOff(smartphoneTraffic, 64e3, 128); // per-run randomized rate/size/burst
     ApplicationContainer smartphoneTrafficApp = smartphoneTraffic.Install(hexoskinNodes.Get(0));
     smartphoneTrafficApp.Start(Seconds(3.0));
     smartphoneTrafficApp.Stop(Seconds(20.0));
+
+    // The rest of the ward: a random subset of the light medical devices plus the
+    // always-on imaging gateway (see iomt-noise.h for why that split matters).
+    InstallMedicalCrossTraffic(wifiNodes, wifiInterfaces, 2.0, 20.0, heavyMbps, heavySpread);
 
     Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 

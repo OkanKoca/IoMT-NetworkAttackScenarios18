@@ -20,14 +20,15 @@ Design:
   * the manifest is pure metadata (file, scenario, intensity, run), derived from
     the planned-run list independently of execution order/outcome.
 
-Note on memory: each run holds a FlowMonitor in RAM; the high-flood DoS/DDoS
-runs are the heavy ones. On a ~2.5 GB-free box, 4 concurrent heavy runs can
-pressure memory -> use --jobs 2/3 if you sweep the high-intensity end. The
-low-intensity end (the interesting stealth regime) is light and fine at 4.
+Note on memory: each run holds a FlowMonitor in RAM, but measured peak RSS is only
+~65 MB even for the heaviest runs (ddos na8, dos rate1000) -- so ~390 MB for 6
+concurrent workers. Memory is no longer the constraint it was on the old 2.5 GB
+box; --jobs may be set to the core count. Runtime is dominated by the flood tail
+(dos rate1000 ~99 s, ddos na8 ~53 s) while most runs cost ~20 s. (docs/18)
 
 Usage:
   python3 run_sweep.py                 # full sweep, 4 parallel workers
-  python3 run_sweep.py --jobs 2        # fewer workers (e.g. to cap memory)
+  python3 run_sweep.py --jobs 6        # one worker per core
   python3 run_sweep.py --dry-run       # print the planned runs only (no side effects)
   python3 run_sweep.py --force         # re-run even if an XML already exists
 --------------------------------------------------------------------------
@@ -55,14 +56,21 @@ BUILD_SCRATCH = os.path.join(NS3_DIR, "build", "scratch")  # compiled scenario b
 N_SEEDS = 10                                     # seeds for dos / greyhole / blackhole
 NORMAL_SEEDS = 40                                # more normal runs: the binary detector's
                                                  # negative class is otherwise tiny (~10 vs ~215)
-# grey-hole intensity: p = 0.1 .. 0.9. Excludes BOTH endpoints on purpose:
+# grey-hole intensity: the drop probability p. Excludes BOTH endpoints on purpose:
 #  * p=0.0 drops nothing -> byte-for-byte identical to the normal baseline (would be the
 #    same feature vector under two labels).
 #  * p=1.0 drops everything -> byte-for-byte identical to the blackhole class (feature
 #    duplicate). The blackhole scenario already covers the full-denial (p=1) endpoint, so
-#    the delivery-axis curve is: grey p=0.1..0.9 (greyhole) + blackhole as the p=1 point.
+#    the delivery-axis curve is: grey p=0.02..0.9 (greyhole) + blackhole as the p=1 point.
 # This keeps every class feature-distinct.
-P_GRID = [round(0.1 * i, 1) for i in range(1, 10)]
+#
+# The 0.02/0.05 points exist because the baseline now HAS a delivery noise floor
+# (0.968 +/- 0.034, docs/18). Against it, grey p=0.1 sits ~2.8 sigma out, p=0.05
+# ~1.4 sigma, p=0.02 ~0.6 sigma -- so the grey arm's detection collapse happens
+# BELOW p=0.1 and the old 0.1..0.9 grid could not see it. These two points are
+# where the delivery-axis curve actually bends. (Cheap: low-p runs are the fast
+# ones.) No DoS equivalent is needed -- rate10 already sits inside the noise.
+P_GRID = [0.02, 0.05] + [round(0.1 * i, 1) for i in range(1, 10)]
 DOS_RATES = [10, 20, 50, 100, 200, 500, 1000]    # DoS intensity: flood rate (pkt/s)
 DDOS_NATTACKERS_GRID = [1, 2, 3, 5, 8]           # DDoS intensity: number of flooders
 DDOS_SEEDS = 5                                   # fewer seeds — DDoS runs are expensive
@@ -76,6 +84,11 @@ SCENARIOS = {
     "ddos": ("IoMT-wifi_ddos.cc", "IoMT-wifi_ddos"),
     "blackhole": ("IoMT-wifi_black.cc", "IoMT-wifi_black"),
 }
+
+# Shared headers the scenarios #include. Copied into scratch/ alongside the .cc
+# files (a scratch source finds a header in its own directory), so per-run noise
+# lives in one place instead of being duplicated across the five scenarios.
+SHARED_HEADERS = ["iomt-noise.h"]
 
 # One planned run: what build_dataset.py needs (scenario/intensity/run) plus how to
 # launch it (target binary + CLI args). The manifest and the job list both derive from these.
@@ -96,11 +109,11 @@ def build_all():
     a clear error naming the file, not a cryptic `cp` failure mid-loop; (2) announce
     each overwrite so a stray hand-edit in scratch/ can't vanish unnoticed.
     """
-    missing = [src for src, _ in SCENARIOS.values()
-               if not os.path.exists(os.path.join(SCEN_SRC, src))]
+    sources = [src for src, _ in SCENARIOS.values()] + SHARED_HEADERS
+    missing = [s for s in sources if not os.path.exists(os.path.join(SCEN_SRC, s))]
     if missing:
         raise FileNotFoundError(f"Missing scenario source(s) in {SCEN_SRC}: {missing}")
-    for src, _ in SCENARIOS.values():
+    for src in sources:
         dst = os.path.join(NS3_DIR, "scratch", src)
         if os.path.exists(dst):
             print(f"[copy] overwriting scratch/{src}")

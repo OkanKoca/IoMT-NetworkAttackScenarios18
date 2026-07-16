@@ -8,6 +8,10 @@
 #include "ns3/flow-monitor-module.h"
 #include "ns3/netanim-module.h"
 
+#include <memory>
+
+#include "iomt-noise.h"
+
 using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE("IoMTDetailedNetworkWithAP");
@@ -27,13 +31,27 @@ int main(int argc, char *argv[]) {
     // independent replicas; --output keeps their FlowMonitor XMLs separate.
     uint32_t rngRun = 1;                          // independent replication ("seed")
     std::string output = "flowmonitor-stats_wip"; // output XML prefix (no extension)
+    // The ward's congestion driver; calibrated in iomt-noise.h (docs/18).
+    double heavyMbps = IOMT_HEAVY_MBPS;
+    double heavySpread = IOMT_HEAVY_SPREAD; // 0 = exactly heavyMbps (calibration)
+    // Packet traces are a debugging aid, not an output of the sweep: FlowMonitor
+    // already carries every feature we extract. Under a congested medium they cost
+    // ~100 MB of pcap/NetAnim per run and the I/O dominates the runtime, so they
+    // are off unless asked for.
+    bool tracing = false;
     CommandLine cmd;
     cmd.AddValue("run", "RNG run number for an independent replication (seed)", rngRun);
     cmd.AddValue("output", "Output filename prefix, without .xml", output);
+    cmd.AddValue("heavy", "Imaging/video gateway offered load in Mbps (0 = off)", heavyMbps);
+    cmd.AddValue("heavyspread", "Per-run fractional spread of the imaging rate", heavySpread);
+    cmd.AddValue("tracing", "Write pcap + NetAnim traces (debugging only)", tracing);
     cmd.Parse(argc, argv);
 
     RngSeedManager::SetSeed(1);     // fixed base seed
     RngSeedManager::SetRun(rngRun); // independent random stream per run
+
+    // Before any Wi-Fi device exists: small, embedded-sized MAC queues.
+    LimitMacQueue();
 
     // Number of nodes
     uint32_t numNodes = 9; // 9 Wi-Fi devices
@@ -52,6 +70,7 @@ int main(int argc, char *argv[]) {
 
     // Wi-Fi channel and PHY configuration
     YansWifiChannelHelper channel = YansWifiChannelHelper::Default();
+    AddChannelFading(channel); // per-run Nakagami fading on top of log-distance
     YansWifiPhyHelper phy = ns3::YansWifiPhyHelper();
     phy.SetChannel(channel.Create());
 
@@ -70,6 +89,11 @@ int main(int argc, char *argv[]) {
     // Configure AP MAC
     mac.SetType("ns3::ApWifiMac", "Ssid", SsidValue(ssid));
     NetDeviceContainer apDevice = wifi.Install(phy, mac, wifiApNode);
+
+    // Per-run random packet loss on every Wi-Fi receiver (STAs + AP): a real
+    // noise floor so baseline delivery is not deterministically 1.0.
+    AddReceiveNoise(wifiDevices);
+    AddReceiveNoise(apDevice);
 
     // Install IP stack on all nodes
     InternetStackHelper stack;
@@ -94,6 +118,7 @@ int main(int argc, char *argv[]) {
                                   "LayoutType", StringValue("RowFirst"));
     mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
     mobility.Install(wifiNodes);
+    JitterPositions(wifiNodes); // small per-run position offset
 
     // Set up mobility for the AP
     Ptr<ListPositionAllocator> apPosition = CreateObject<ListPositionAllocator>();
@@ -113,7 +138,13 @@ int main(int argc, char *argv[]) {
     p2pAddress.SetBase("10.1.1.0", "255.255.255.0");
     Ipv4InterfaceContainer p2pInterfaces = p2pAddress.Assign(p2pDevices);
 
-    // Baxter Pump Traffic (High Priority)
+    // The medical path under study (STA2 -> STA0, port 8080): a patient-monitor
+    // ECG waveform, and the flow the grey-hole attacks in the sibling scenario.
+    // 128 kbps / 128 B is the real clinical profile: a low bit rate carried by
+    // MANY SMALL packets. Packet COUNT, not bit rate, sets how finely delivery
+    // can be measured, so this stays as packet-rich as the old generic 1 Mbps /
+    // 512 B stream while using ~8x less of the band -- which is what leaves room
+    // for the imaging gateway to congest the medium.
     uint16_t baxterPort = 8080;
     Address baxterAddress(InetSocketAddress(wifiInterfaces.GetAddress(0), baxterPort));
     PacketSinkHelper baxterSink("ns3::UdpSocketFactory", baxterAddress);
@@ -122,8 +153,7 @@ int main(int argc, char *argv[]) {
     baxterApp.Stop(Seconds(20.0));
 
     OnOffHelper baxterTraffic("ns3::UdpSocketFactory", baxterAddress);
-    baxterTraffic.SetAttribute("DataRate", StringValue("1Mbps"));
-    baxterTraffic.SetAttribute("PacketSize", UintegerValue(512));
+    SetNoisyOnOff(baxterTraffic, 128e3, 128); // per-run randomized rate/size/burst
     ApplicationContainer baxterTrafficApp = baxterTraffic.Install(wifiNodes.Get(2)); // A secondary control device
     baxterTrafficApp.Start(Seconds(2.0));
     baxterTrafficApp.Stop(Seconds(20.0));
@@ -137,25 +167,35 @@ int main(int argc, char *argv[]) {
     smartphoneApp.Stop(Seconds(20.0));
 
     OnOffHelper smartphoneTraffic("ns3::UdpSocketFactory", smartphoneAddress);
-    smartphoneTraffic.SetAttribute("DataRate", StringValue("512Kbps"));
-    smartphoneTraffic.SetAttribute("PacketSize", UintegerValue(256));
+    SetNoisyOnOff(smartphoneTraffic, 64e3, 128); // per-run randomized rate/size/burst
     ApplicationContainer smartphoneTrafficApp = smartphoneTraffic.Install(hexoskinNodes.Get(0)); // Hexoskin Shirt
     smartphoneTrafficApp.Start(Seconds(3.0));
     smartphoneTrafficApp.Stop(Seconds(20.0));
+
+    // The rest of the ward: a random subset of the light medical devices plus the
+    // always-on imaging gateway (see iomt-noise.h for why that split matters).
+    uint32_t crossFlows =
+        InstallMedicalCrossTraffic(wifiNodes, wifiInterfaces, 2.0, 20.0, heavyMbps, heavySpread);
+    std::cout << "Cross-traffic flows installed: " << crossFlows
+              << " (imaging " << heavyMbps << " Mbps, spread " << heavySpread << ")" << std::endl;
 
     // Enable routing on the relay node so it can forward packets
     Ipv4GlobalRoutingHelper::PopulateRoutingTables();
     wifiNodes.Get(0)->GetObject<Ipv4>()->SetForwarding(1, true);  // Enable forwarding on interface 1 of relay
 
-    // Setup Pcap capturing for various devices
-    phy.EnablePcap("wifi_ap_wip", wifiApNode);  // Capture Wi-Fi traffic
-    phy.EnablePcap("baxter_pump_wip", wifiDevices.Get(0));  // Capture Baxter traffic (Node 0)
-    phy.EnablePcap("hexoskin_phone_wip", wifiDevices.Get(1));  // Capture Baxter traffic (Node 0)
-    p2p.EnablePcap("hexoskin_wip", p2pDevices);  // Capture Hexoskin traffic (P2P link)
- 
-    // Enable NetAnim trace
-    AnimationInterface anim ("network-anim_wip.xml");
-     
+    // Packet traces + NetAnim: debugging aids, off by default (see --tracing).
+    // Held by pointer because AnimationInterface starts writing as soon as it is
+    // constructed, so it must not exist at all unless it was asked for.
+    std::unique_ptr<AnimationInterface> anim;
+    if (tracing)
+    {
+        phy.EnablePcap("wifi_ap_wip", wifiApNode);  // Capture Wi-Fi traffic
+        phy.EnablePcap("baxter_pump_wip", wifiDevices.Get(0));  // Capture Baxter traffic (Node 0)
+        phy.EnablePcap("hexoskin_phone_wip", wifiDevices.Get(1));  // Capture Baxter traffic (Node 0)
+        p2p.EnablePcap("hexoskin_wip", p2pDevices);  // Capture Hexoskin traffic (P2P link)
+        anim = std::make_unique<AnimationInterface>("network-anim_wip.xml");
+    }
+
     // FlowMonitor setup
     FlowMonitorHelper flowmon;
     Ptr<FlowMonitor> monitor = flowmon.InstallAll();
