@@ -145,18 +145,18 @@ int main(int argc, char *argv[]) {
     // can be measured, so this stays as packet-rich as the old generic 1 Mbps /
     // 512 B stream while using ~8x less of the band -- which is what leaves room
     // for the imaging gateway to congest the medium.
-    uint16_t baxterPort = 8080;
-    Address baxterAddress(InetSocketAddress(wifiInterfaces.GetAddress(0), baxterPort));
-    PacketSinkHelper baxterSink("ns3::UdpSocketFactory", baxterAddress);
-    ApplicationContainer baxterApp = baxterSink.Install(wifiNodes.Get(0)); // Baxter node
-    baxterApp.Start(Seconds(1.0));
-    baxterApp.Stop(Seconds(20.0));
+    uint16_t monitorPort = 8080;
+    Address monitorAddress(InetSocketAddress(wifiInterfaces.GetAddress(0), monitorPort));
+    PacketSinkHelper monitorSink("ns3::UdpSocketFactory", monitorAddress);
+    ApplicationContainer monitorApp = monitorSink.Install(wifiNodes.Get(0)); // patient monitor
+    monitorApp.Start(Seconds(1.0));
+    monitorApp.Stop(Seconds(20.0));
 
-    OnOffHelper baxterTraffic("ns3::UdpSocketFactory", baxterAddress);
-    SetNoisyOnOff(baxterTraffic, 128e3, 128); // per-run randomized rate/size/burst
-    ApplicationContainer baxterTrafficApp = baxterTraffic.Install(wifiNodes.Get(2)); // A secondary control device
-    baxterTrafficApp.Start(Seconds(2.0));
-    baxterTrafficApp.Stop(Seconds(20.0));
+    OnOffHelper ecgTraffic("ns3::UdpSocketFactory", monitorAddress);
+    SetNoisyOnOff(ecgTraffic, 128e3, 128); // per-run randomized rate/size/burst
+    ApplicationContainer ecgTrafficApp = ecgTraffic.Install(wifiNodes.Get(2)); // A secondary control device
+    ecgTrafficApp.Start(Seconds(2.0));
+    ecgTrafficApp.Stop(Seconds(20.0));
 
     // Smartphone Traffic (Lower Priority)
     uint16_t smartphonePort = 9090;
@@ -190,8 +190,8 @@ int main(int argc, char *argv[]) {
     if (tracing)
     {
         phy.EnablePcap("wifi_ap_wip", wifiApNode);  // Capture Wi-Fi traffic
-        phy.EnablePcap("baxter_pump_wip", wifiDevices.Get(0));  // Capture Baxter traffic (Node 0)
-        phy.EnablePcap("hexoskin_phone_wip", wifiDevices.Get(1));  // Capture Baxter traffic (Node 0)
+        phy.EnablePcap("monitor_wip", wifiDevices.Get(0));  // Capture monitor traffic (Node 0)
+        phy.EnablePcap("hexoskin_phone_wip", wifiDevices.Get(1));  // Capture monitor traffic (Node 0)
         p2p.EnablePcap("hexoskin_wip", p2pDevices);  // Capture Hexoskin traffic (P2P link)
         anim = std::make_unique<AnimationInterface>("network-anim_wip.xml");
     }

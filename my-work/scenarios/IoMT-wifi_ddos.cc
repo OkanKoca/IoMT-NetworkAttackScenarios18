@@ -3,7 +3,7 @@
  * ---------------------------------------------------------------------------
  * Distributed Denial-of-Service (DDoS) on the IoMT Wi-Fi network.
  *
- * Several attacker stations flood the infusion pump simultaneously, exhausting
+ * Several attacker stations flood the patient monitor simultaneously, exhausting
  * the shared Wi-Fi medium so the legitimate control/telemetry flows degrade.
  * It differs from single-source DoS by the NUMBER of concurrent flooders
  * (--nattackers), which is its structural signature (many flood flows instead
@@ -149,20 +149,20 @@ main(int argc, char* argv[])
     Ipv4InterfaceContainer p2pInterfaces = p2pAddress.Assign(p2pDevices);
 
     // --- Legitimate traffic (same windows as the baseline) -------------------
-    uint16_t pumpPort = 8080;
-    Address pumpAddress(InetSocketAddress(wifiInterfaces.GetAddress(0), pumpPort)); // STA 0
-    PacketSinkHelper pumpSink("ns3::UdpSocketFactory", pumpAddress);
-    ApplicationContainer pumpApp = pumpSink.Install(wifiNodes.Get(0));
-    pumpApp.Start(Seconds(1.0));
-    pumpApp.Stop(Seconds(20.0));
+    uint16_t monitorPort = 8080;
+    Address monitorAddress(InetSocketAddress(wifiInterfaces.GetAddress(0), monitorPort)); // STA 0
+    PacketSinkHelper monitorSink("ns3::UdpSocketFactory", monitorAddress);
+    ApplicationContainer monitorApp = monitorSink.Install(wifiNodes.Get(0));
+    monitorApp.Start(Seconds(1.0));
+    monitorApp.Stop(Seconds(20.0));
 
-    OnOffHelper controlTraffic("ns3::UdpSocketFactory", pumpAddress);
+    OnOffHelper ecgTraffic("ns3::UdpSocketFactory", monitorAddress);
     // Patient-monitor ECG waveform: the real clinical profile is a low bit rate
     // carried by many small packets (see IoMT-wifi_wip.cc for the full rationale).
-    SetNoisyOnOff(controlTraffic, 128e3, 128); // per-run randomized rate/size/burst
-    ApplicationContainer controlApp = controlTraffic.Install(wifiNodes.Get(2));
-    controlApp.Start(Seconds(2.0));
-    controlApp.Stop(Seconds(20.0));
+    SetNoisyOnOff(ecgTraffic, 128e3, 128); // per-run randomized rate/size/burst
+    ApplicationContainer ecgApp = ecgTraffic.Install(wifiNodes.Get(2));
+    ecgApp.Start(Seconds(2.0));
+    ecgApp.Stop(Seconds(20.0));
 
     uint16_t smartphonePort = 9090;
     Address smartphoneAddress(InetSocketAddress(wifiInterfaces.GetAddress(1), smartphonePort));
@@ -180,8 +180,8 @@ main(int argc, char* argv[])
     // always-on imaging gateway (see iomt-noise.h for why that split matters).
     InstallMedicalCrossTraffic(wifiNodes, wifiInterfaces, 2.0, 20.0, heavyMbps, heavySpread);
 
-    // --- DDoS: each attacker floods the pump's host, saturating the medium ---
-    Ipv4Address targetAddress = wifiInterfaces.GetAddress(0); // pump host (STA 0)
+    // --- DDoS: each attacker floods the monitor's host, saturating the medium ---
+    Ipv4Address targetAddress = wifiInterfaces.GetAddress(0); // monitor host (STA 0)
     for (uint32_t i = 0; i < nAttackers; ++i)
     {
         UdpEchoClientHelper attackClient(targetAddress, 9); // flood target port 9

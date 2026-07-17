@@ -3,8 +3,8 @@
  * ---------------------------------------------------------------------------
  * Blackhole attack on the IoMT Wi-Fi network.
  *
- * An on-path relay node attracts the infusion-pump control traffic and drops
- * EVERY packet, forwarding nothing to the real pump (total denial of the
+ * An on-path relay node attracts the patient monitor's ECG waveform and drops
+ * EVERY packet, forwarding nothing to the real monitor (total denial of the
  * control path). It is the "loud" sibling of the stealthy grey-hole: behaviour
  * is identical to grey-hole at p = 1 (delivery_ratio -> 0), reproduced here as
  * a standalone scenario for faithfulness to the study's attack roster.
@@ -162,25 +162,25 @@ main(int argc, char* argv[])
     Ipv4InterfaceContainer p2pInterfaces = p2pAddress.Assign(p2pDevices);
 
     // --- Node roles ----------------------------------------------------------
-    uint16_t pumpPort = 8080;
+    uint16_t monitorPort = 8080;
     uint16_t relayPort = 7070;
-    Address pumpAddress(InetSocketAddress(wifiInterfaces.GetAddress(0), pumpPort));   // STA 0
+    Address monitorAddress(InetSocketAddress(wifiInterfaces.GetAddress(0), monitorPort));   // STA 0
     Address relayAddress(InetSocketAddress(wifiInterfaces.GetAddress(8), relayPort)); // STA 8 attacker
 
-    // Real pump sink on STA 0 (receives nothing under attack).
-    PacketSinkHelper pumpSink("ns3::UdpSocketFactory", pumpAddress);
-    ApplicationContainer pumpApp = pumpSink.Install(wifiNodes.Get(0));
-    pumpApp.Start(Seconds(1.0));
-    pumpApp.Stop(Seconds(simulationTime));
+    // Real patient-monitor sink on STA 0.(receives nothing under attack).
+    PacketSinkHelper monitorSink("ns3::UdpSocketFactory", monitorAddress);
+    ApplicationContainer monitorApp = monitorSink.Install(wifiNodes.Get(0));
+    monitorApp.Start(Seconds(1.0));
+    monitorApp.Stop(Seconds(simulationTime));
 
     // Control traffic (STA 2) aimed at the attacker relay.
-    OnOffHelper controlTraffic("ns3::UdpSocketFactory", relayAddress);
+    OnOffHelper ecgTraffic("ns3::UdpSocketFactory", relayAddress);
     // Patient-monitor ECG waveform: the real clinical profile is a low bit rate
     // carried by many small packets (see IoMT-wifi_wip.cc for the full rationale).
-    SetNoisyOnOff(controlTraffic, 128e3, 128); // per-run randomized rate/size/burst
-    ApplicationContainer controlApp = controlTraffic.Install(wifiNodes.Get(2));
-    controlApp.Start(Seconds(2.0));
-    controlApp.Stop(Seconds(20.0));
+    SetNoisyOnOff(ecgTraffic, 128e3, 128); // per-run randomized rate/size/burst
+    ApplicationContainer ecgApp = ecgTraffic.Install(wifiNodes.Get(2));
+    ecgApp.Start(Seconds(2.0));
+    ecgApp.Stop(Seconds(20.0));
 
     // Blackhole relay on STA 8: drops everything.
     Ptr<BlackholeRelay> relay = CreateObject<BlackholeRelay>();

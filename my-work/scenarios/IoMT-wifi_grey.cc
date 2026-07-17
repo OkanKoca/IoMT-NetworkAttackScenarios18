@@ -3,8 +3,8 @@
  * ---------------------------------------------------------------------------
  * Grey-hole (selective forwarding) attack on the IoMT Wi-Fi network.
  *
- * An on-path relay node receives the high-priority infusion-pump control
- * traffic and forwards each packet to the real pump only with probability
+ * An on-path relay node receives the patient monitor's ECG waveform
+ * traffic and forwards each packet to the real monitor only with probability
  * (1 - p), silently dropping it with probability p. Unlike a blackhole
  * (p = 1, drops everything and is obvious), a grey-hole with 0 < p < 1 leaks
  * only partial loss that resembles ordinary wireless degradation -> stealthy.
@@ -13,9 +13,9 @@
  *   p = 1.0  -> a working blackhole (target flow fully denied)
  *
  * Note on measurement: the drop happens at the relay application, so the
- * survivors' hop (relay -> pump) shows no L3 "lostPackets"; the attack instead
- * shows up as a THROUGHPUT / rxPackets deficit on the pump-delivery flow.
- * End-to-end loss = 1 - (pump rxPackets / control txPackets).
+ * survivors' hop (relay -> monitor) shows no L3 "lostPackets"; the attack instead
+ * shows up as a THROUGHPUT / rxPackets deficit on the monitor-delivery flow.
+ * End-to-end loss = 1 - (monitor rxPackets / ECG txPackets).
  *
  * Parameters:
  *   --p       drop probability (attack intensity knob), 0.0 .. 1.0
@@ -54,7 +54,7 @@ class GreyholeRelay : public Application
 {
   public:
     // listenPort : UDP port this relay receives redirected victim traffic on
-    // forwardTo   : real destination (pump address:port) survivors are sent to
+    // forwardTo   : real destination (monitor address:port) survivors are sent to
     // dropProb    : p, probability each packet is dropped
     void Setup(uint16_t listenPort, Address forwardTo, double dropProb);
     // Public getters: counters are read from main() AFTER Simulator::Run(),
@@ -72,7 +72,7 @@ class GreyholeRelay : public Application
     // Ptr<T> = NS-3 reference-counted smart pointer (auto-frees the object
     // when the last Ptr to it goes away; no manual delete needed).
     Ptr<Socket> m_rxSocket;                 // receives the victim's traffic
-    Ptr<Socket> m_txSocket;                 // forwards survivors to the pump
+    Ptr<Socket> m_txSocket;                 // forwards survivors to the monitor
     uint16_t m_listenPort = 0;
     Address m_forwardTo;                    // generic address wrapper (holds IP:port)
     double m_dropProb = 0.0;
@@ -108,9 +108,9 @@ GreyholeRelay::StartApplication()
     // function into an NS-3 callback object; HandleRead fires on each arrival.
     m_rxSocket->SetRecvCallback(MakeCallback(&GreyholeRelay::HandleRead, this));
 
-    // Socket used to forward survivors to the real pump.
+    // Socket used to forward survivors to the real monitor.
     m_txSocket = Socket::CreateSocket(GetNode(), UdpSocketFactory::GetTypeId());
-    // Connect(peer): fix the remote endpoint so later Send() goes to the pump.
+    // Connect(peer): fix the remote endpoint so later Send() goes to the monitor.
     m_txSocket->Connect(m_forwardTo);
 }
 
@@ -153,7 +153,7 @@ GreyholeRelay::HandleRead(Ptr<Socket> socket)
         // silently break here and must copy the original bytes instead.
         Ptr<Packet> fresh = Create<Packet>(packet->GetSize());
         // Send(packet) -> bytes sent (>=0), or -1 on error. Goes to the peer
-        // fixed by Connect() above (the pump).
+        // fixed by Connect() above (the monitor).
         m_txSocket->Send(fresh);
         m_forwarded++;
     }
@@ -268,35 +268,35 @@ main(int argc, char* argv[])
     Ipv4InterfaceContainer p2pInterfaces = p2pAddress.Assign(p2pDevices);
 
     // --- Node roles ----------------------------------------------------------
-    uint16_t pumpPort = 8080;  // real infusion-pump sink port
+    uint16_t monitorPort = 8080;  // real patient-monitor sink port
     uint16_t relayPort = 7070; // port the grey-hole relay listens on
     // InetSocketAddress(ip, port) wraps an IPv4 endpoint; GetAddress(i) returns
     // the IP assigned to interface i (STA index) above.
-    Address pumpAddress(InetSocketAddress(wifiInterfaces.GetAddress(0), pumpPort));   // STA 0
+    Address monitorAddress(InetSocketAddress(wifiInterfaces.GetAddress(0), monitorPort));   // STA 0
     Address relayAddress(InetSocketAddress(wifiInterfaces.GetAddress(8), relayPort)); // STA 8 attacker
 
-    // Real pump sink on STA 0.
+    // Real patient-monitor sink on STA 0.
     // PacketSinkHelper installs a server that just absorbs incoming packets.
-    PacketSinkHelper pumpSink("ns3::UdpSocketFactory", pumpAddress);
-    ApplicationContainer pumpApp = pumpSink.Install(wifiNodes.Get(0)); // -> ApplicationContainer
-    pumpApp.Start(Seconds(1.0)); // Seconds(x) -> Time value; schedules app start
-    pumpApp.Stop(Seconds(simulationTime));
+    PacketSinkHelper monitorSink("ns3::UdpSocketFactory", monitorAddress);
+    ApplicationContainer monitorApp = monitorSink.Install(wifiNodes.Get(0)); // -> ApplicationContainer
+    monitorApp.Start(Seconds(1.0)); // Seconds(x) -> Time value; schedules app start
+    monitorApp.Stop(Seconds(simulationTime));
 
     // High-priority control traffic (STA 2) — now aimed at the ATTACKER relay.
     // OnOffHelper generates a UDP stream toward the given remote address.
-    OnOffHelper controlTraffic("ns3::UdpSocketFactory", relayAddress);
+    OnOffHelper ecgTraffic("ns3::UdpSocketFactory", relayAddress);
     // Patient-monitor ECG waveform: the real clinical profile is a low bit rate
     // carried by many small packets (see IoMT-wifi_wip.cc for the full rationale).
     // Packet COUNT is what sets how finely the drop probability p can be resolved,
     // so this victim path stays deliberately packet-rich.
-    SetNoisyOnOff(controlTraffic, 128e3, 128); // per-run randomized rate/size/burst
-    ApplicationContainer controlApp = controlTraffic.Install(wifiNodes.Get(2));
-    controlApp.Start(Seconds(2.0)); // starts AFTER the relay is listening (1.0s)
-    controlApp.Stop(Seconds(20.0));
+    SetNoisyOnOff(ecgTraffic, 128e3, 128); // per-run randomized rate/size/burst
+    ApplicationContainer ecgApp = ecgTraffic.Install(wifiNodes.Get(2));
+    ecgApp.Start(Seconds(2.0)); // starts AFTER the relay is listening (1.0s)
+    ecgApp.Stop(Seconds(20.0));
 
-    // Grey-hole relay on STA 8: forward survivors to the real pump with prob (1-p).
+    // Grey-hole relay on STA 8: forward survivors to the real monitor with prob (1-p).
     Ptr<GreyholeRelay> relay = CreateObject<GreyholeRelay>();
-    relay->Setup(relayPort, pumpAddress, dropProb);
+    relay->Setup(relayPort, monitorAddress, dropProb);
     // AddApplication attaches our custom app to the attacker node (STA 8).
     wifiNodes.Get(8)->AddApplication(relay);
     relay->SetStartTime(Seconds(1.0)); // listening before control traffic begins

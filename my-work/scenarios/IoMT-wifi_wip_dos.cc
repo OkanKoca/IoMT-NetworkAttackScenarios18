@@ -136,21 +136,21 @@ int main(int argc, char *argv[]) {
     p2pAddress.SetBase("10.1.1.0", "255.255.255.0");
     Ipv4InterfaceContainer p2pInterfaces = p2pAddress.Assign(p2pDevices);
 
-    // Baxter Pump Traffic (High Priority)
-    uint16_t baxterPort = 8080;
-    Address baxterAddress(InetSocketAddress(wifiInterfaces.GetAddress(0), baxterPort));
-    PacketSinkHelper baxterSink("ns3::UdpSocketFactory", baxterAddress);
-    ApplicationContainer baxterApp = baxterSink.Install(wifiNodes.Get(0)); // Baxter node
-    baxterApp.Start(Seconds(1.0));
-    baxterApp.Stop(Seconds(20.0));
+    // ECG waveform: sensor (STA2) -> patient monitor (STA0)
+    uint16_t monitorPort = 8080;
+    Address monitorAddress(InetSocketAddress(wifiInterfaces.GetAddress(0), monitorPort));
+    PacketSinkHelper monitorSink("ns3::UdpSocketFactory", monitorAddress);
+    ApplicationContainer monitorApp = monitorSink.Install(wifiNodes.Get(0)); // patient monitor
+    monitorApp.Start(Seconds(1.0));
+    monitorApp.Stop(Seconds(20.0));
 
-    OnOffHelper baxterTraffic("ns3::UdpSocketFactory", baxterAddress);
+    OnOffHelper ecgTraffic("ns3::UdpSocketFactory", monitorAddress);
     // Patient-monitor ECG waveform: the real clinical profile is a low bit rate
     // carried by many small packets (see IoMT-wifi_wip.cc for the full rationale).
-    SetNoisyOnOff(baxterTraffic, 128e3, 128); // per-run randomized rate/size/burst
-    ApplicationContainer baxterTrafficApp = baxterTraffic.Install(wifiNodes.Get(2)); // A secondary control device
-    baxterTrafficApp.Start(Seconds(2.0));
-    baxterTrafficApp.Stop(Seconds(20.0));
+    SetNoisyOnOff(ecgTraffic, 128e3, 128); // per-run randomized rate/size/burst
+    ApplicationContainer ecgTrafficApp = ecgTraffic.Install(wifiNodes.Get(2)); // A secondary control device
+    ecgTrafficApp.Start(Seconds(2.0));
+    ecgTrafficApp.Stop(Seconds(20.0));
 
     // Smartphone Traffic (Lower Priority)
     uint16_t smartphonePort = 9090;
@@ -175,7 +175,7 @@ int main(int argc, char *argv[]) {
     wifiNodes.Get(0)->GetObject<Ipv4>()->SetForwarding(1, true);  // Enable forwarding on interface 1 of relay
 
 Ptr<Node> attackerNode = wifiDevices.Get(8)->GetNode(); // Attacker node
-Ptr<Node> targetNode = wifiNodes.Get(0);   // Target node (Baxter Infusion Pump)
+Ptr<Node> targetNode = wifiNodes.Get(0);   // Target node (patient monitor)
 
 // Fetch the IP address of the target node
 Ipv4Address targetAddress = wifiInterfaces.GetAddress(0);  // Get target node's IP address
@@ -200,12 +200,12 @@ attackApp.Stop(Seconds(simulationTime)); // run for the full (normalized) sim du
     if (tracing)
     {
         phy.EnablePcap("wifi_ap_dos", wifiApNode);  // Capture Wi-Fi traffic
-        phy.EnablePcap("baxter_pump_dos", wifiDevices.Get(0));  // Capture Baxter traffic (Node 0)
+        phy.EnablePcap("monitor_dos", wifiDevices.Get(0));  // Capture monitor traffic (Node 0)
         phy.EnablePcap("hexoskin_phone_dos", wifiDevices.Get(1));  // Capture Hexoskin Smartphone (Node 0)
         p2p.EnablePcap("hexoskin_dos", p2pDevices);  // Capture Hexoskin traffic (P2P link)
 
         anim = std::make_unique<AnimationInterface>("network-anim_dos.xml");
-        anim->UpdateNodeDescription(wifiNodes.Get(0), "Baxter");
+        anim->UpdateNodeDescription(wifiNodes.Get(0), "Patient Monitor");
         anim->UpdateNodeDescription(wifiApNode.Get(0), "Access Point");
         anim->EnablePacketMetadata(true);  // Ensures packet information is included
         anim->EnableIpv4RouteTracking("iproute-anim.xml", Seconds(0), Seconds(30), Seconds(0.5));
