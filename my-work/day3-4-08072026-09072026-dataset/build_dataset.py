@@ -26,8 +26,8 @@ import pandas as pd
 # scenario-agnostic: the source IP changes (STA2 vs relay), but the role a flow
 # plays is fixed by where it is headed. (docs/07)
 PORT_ROLE = {
-    8080: "pump",       # control traffic delivered to the infusion pump
-    7070: "relay_in",   # control traffic arriving at the grey-hole relay (grey-hole only)
+    8080: "monitor",    # ECG waveform delivered to the patient monitor (the victim path)
+    7070: "relay_in",   # victim traffic arriving at the grey-hole relay (grey-hole only)
     9090: "telemetry",  # untouched low-priority telemetry (contrast flow)
     9: "flood",         # DoS/DDoS flood target port
 }
@@ -102,24 +102,57 @@ def parse_xml(path):
 
 
 def _delivery_ratio(flows):
-    """End-to-end delivery ratio of the control (medical) path.
+    """End-to-end delivery ratio of the victim (medical) path.
 
-    Grey-hole splits the path in two (control->relay on 7070, relay->pump on 8080),
-    so the honest end-to-end ratio joins them: delivered_by_pump / sent_to_relay.
-    When there is no relay hop (normal/DoS) it is the pump flow's own rx/tx.
-    A fully-denied path (blackhole, p=1) has traffic into the relay but no pump
+    Grey-hole splits the path in two (sensor->relay on 7070, relay->monitor on 8080),
+    so the honest end-to-end ratio joins them: delivered_by_monitor / sent_to_relay.
+    When there is no relay hop (normal/DoS) it is the monitor flow's own rx/tx.
+    A fully-denied path (blackhole, p=1) has traffic into the relay but no monitor
     flow -> ratio 0, which is exactly right. (docs/05)
     """
     relay_in = [f for f in flows if f["role"] == "relay_in"]
-    pump = [f for f in flows if f["role"] == "pump"]
-    rx_pump = sum(f["rx"] for f in pump)
+    monitor = [f for f in flows if f["role"] == "monitor"]
+    rx_monitor = sum(f["rx"] for f in monitor)
     if relay_in:
         tx_in = sum(f["tx"] for f in relay_in)
-        return rx_pump / tx_in if tx_in > 0 else float("nan")
-    if pump:
-        tx_pump = sum(f["tx"] for f in pump)
-        return rx_pump / tx_pump if tx_pump > 0 else float("nan")
+        return rx_monitor / tx_in if tx_in > 0 else float("nan")
+    if monitor:
+        tx_monitor = sum(f["tx"] for f in monitor)
+        return rx_monitor / tx_monitor if tx_monitor > 0 else float("nan")
     return float("nan")
+
+
+def _victim_timing(flows):
+    """End-to-end delay and jitter of the victim (medical) path, in ms.
+
+    Follows the same rule as _delivery_ratio, and for the same reason. The grey-hole
+    and blackhole scenarios split the victim path into TWO IP flows (sensor->relay on
+    7070, relay->monitor on 8080), because a station cannot reach another station
+    directly in infrastructure mode. Timing only the 8080 flow would therefore measure
+    the LAST LEG in those scenarios and the WHOLE path in the others -- one column
+    silently holding two different physical quantities. Measured, it reports the
+    relayed path as FASTER than the direct one (14.5 ms vs 16.2 ms) when the relayed
+    path is really 1.76x slower (28.4 ms end-to-end), i.e. it hands the model a
+    spurious separator pointing the wrong way. Delays add along a path, so sum the legs.
+
+    Jitter: summing each leg's mean |delay variation| is an APPROXIMATION -- two
+    independent legs would combine as sqrt(a^2 + b^2), so this is an upper bound. It is
+    used anyway because it is at least consistent across classes, which is the property
+    a feature must have; timing a single leg is not approximate but wrong.
+
+    Returns (nan, nan) when nothing reaches the monitor (blackhole, grey p=1): a fully
+    denied path has no delivered packets to time. That missingness is itself signal and
+    is imputed + flagged with an indicator at the ML stage.
+    """
+    monitor = [f for f in flows if f["role"] == "monitor"]
+    if not monitor:
+        return float("nan"), float("nan")
+    last = max(monitor, key=lambda f: f["rx"])  # busiest, mirroring the rule below
+    relay_in = [f for f in flows if f["role"] == "relay_in"]
+    if not relay_in:
+        return last["owd_ms"], last["pdv_ms"]  # no relay: the 8080 flow IS the path
+    first = max(relay_in, key=lambda f: f["rx"])
+    return first["owd_ms"] + last["owd_ms"], first["pdv_ms"] + last["pdv_ms"]
 
 
 def run_features(flows, meta):
@@ -127,10 +160,8 @@ def run_features(flows, meta):
     total_tx = sum(f["tx"] for f in flows)
     total_lost = sum(f["lost"] for f in flows)
 
-    # The medical delivery flow (port 8080) carries the timing signal we care about;
-    # pick the busiest one if several exist.
-    pump_flows = [f for f in flows if f["role"] == "pump"]
-    control = max(pump_flows, key=lambda f: f["rx"]) if pump_flows else None
+    # End-to-end timing of the victim path, joining the relay legs where they exist.
+    monitor_owd, monitor_pdv = _victim_timing(flows)
     tele = next((f for f in flows if f["role"] == "telemetry"), None)
     active = [f for f in flows if f["rx"] > 0]
 
@@ -160,8 +191,8 @@ def run_features(flows, meta):
         "delivery_ratio": _delivery_ratio(flows),
         "overall_loss_ratio": (total_lost / total_tx) if total_tx > 0 else 0.0,
         # --- timing ---
-        "control_owd_ms": control["owd_ms"] if control else float("nan"),
-        "control_pdv_ms": control["pdv_ms"] if control else float("nan"),
+        "monitor_owd_ms": monitor_owd,
+        "monitor_pdv_ms": monitor_pdv,
         "mean_owd_ms": (sum(f["owd_ms"] for f in active) / len(active)) if active else float("nan"),
         "mean_pdv_ms": (sum(f["pdv_ms"] for f in active) / len(active)) if active else float("nan"),
         # --- contrast ---
@@ -193,7 +224,7 @@ def main():
         for f in flows:
             flow_rows.append({"run_id": run_id, **meta, **f})
         row = run_features(flows, meta)
-        # A NaN delivery_ratio means a broken run (no pump tx: crashed sim, wrong port,
+        # A NaN delivery_ratio means a broken run (no monitor tx: crashed sim, wrong port,
         # early termination), not a real 0% delivery. Surface it loudly with the offending
         # file so it can be investigated rather than silently poisoning the feature vector.
         if pd.isna(row["delivery_ratio"]):
@@ -206,7 +237,7 @@ def main():
     dataset.to_csv(os.path.join(args.outdir, "dataset.csv"), index=False)
 
     # Dataset-level NaN audit before the file is used for training. Some NaNs are EXPECTED
-    # (control_owd/pdv on fully-denied paths: blackhole, grey p=1 have no pump flow to time)
+    # (monitor_owd/pdv on fully-denied paths: blackhole, grey p=1 have no monitor flow to time)
     # and will be imputed + flagged with a missingness indicator at the ML stage. Any NaN in
     # delivery_ratio here would instead signal a broken run.
     nan_cols = dataset.columns[dataset.isna().any()].tolist()
