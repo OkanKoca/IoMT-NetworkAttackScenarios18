@@ -28,3 +28,8 @@ docs/
 
 # Generated report (local)
 IoMT-Yontem-ve-Kararlar-Raporu.docx
+
+# Report generator: writes a .docx from scratch, while the reports themselves are
+# hand-edited and kept out of the repo. Keeping it tracked invites regenerating
+# over those edits.
+my-work/*/make_report.py
