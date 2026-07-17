@@ -71,7 +71,13 @@ NORMAL_SEEDS = 40                                # more normal runs: the binary 
 # where the delivery-axis curve actually bends. (Cheap: low-p runs are the fast
 # ones.) No DoS equivalent is needed -- rate10 already sits inside the noise.
 P_GRID = [0.02, 0.05] + [round(0.1 * i, 1) for i in range(1, 10)]
-DOS_RATES = [10, 20, 50, 100, 200, 500, 1000]    # DoS intensity: flood rate (pkt/s)
+# DoS intensity: flood rate (pkt/s). The 1/2/5 points exist for the same reason as
+# grey's 0.02/0.05: the curve has to reach its floor to show a collapse. At rate10 the
+# flood is ~82 kbps against a ~12 Mbps congested medium and detection is already down to
+# 0.50 -- but 0.50 is where the grid STOPS, not where the attack becomes invisible, so
+# the arm cannot be said to bottom out. These runs are also the cheap ones (~20 s): the
+# interesting region and the affordable region are the same place.
+DOS_RATES = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]
 DDOS_NATTACKERS_GRID = [1, 2, 3, 5, 8]           # DDoS intensity: number of flooders
 DDOS_SEEDS = 5                                   # fewer seeds — DDoS runs are expensive
 BLACKHOLE_INTENSITY = 1.0                        # single point (= grey-hole p=1 endpoint)
