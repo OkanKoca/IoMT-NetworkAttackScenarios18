@@ -124,6 +124,24 @@ RELAY_BASELINE_SEEDS = 40
 # to this topology. (docs/19 section 7)
 RELAY_POSITIONS = [5, 6, 7, 4]                   # 8 is covered by the baseline above
 RELAY_POSITION_SEEDS = 10
+# One position gets the full seed count instead of 10. Measuring grey-hole against the
+# BENIGN RELAY (rather than against normal) is what gives the delivery axis a real
+# collapse curve, and in that comparison the benign relay is the negative class -- so its
+# spread sets the false-alarm floor directly. At STA8 that floor is 0.35, because the
+# benign relay there is bimodal: ~28% of its runs lose the first burst entirely and land
+# a whole OnOff period out. STA5 sits 10 m from the AP with delivery 0.987 +/- little, so
+# it should be a far cleaner negative class. 40 seeds matches the STA8 baseline's count,
+# so the two floors can be compared without an n mismatch.
+RELAY_CLEAN_POSITION = 5
+RELAY_CLEAN_SEEDS = 40
+# The grey-hole grid repeated at the clean position. This is NOT optional decoration: the
+# benign-relay comparison is only valid when both sides sit at the SAME position, because
+# position is separable on its own. Measured: a classifier tells two BENIGN relays (both
+# p=0, both harmless) apart by position alone at 0.762 accuracy, chance being 0.50. So
+# pairing an STA5 negative class with an STA8 positive class would credit the detector for
+# recognizing distance and report it as recognizing malice.
+GREY_CLEAN_POSITION_GRID = P_GRID
+GREY_CLEAN_SEEDS = 10
 # VOLUME-MATCHED DoS/DDoS. The detector's weakest pair (dos F1 0.672, ddos 0.577)
 # confuses them in both directions, and the standing explanation is that one strong
 # flood and several weak ones carry the same volume signature. That is a hypothesis
@@ -272,10 +290,18 @@ def build_specs():
     # Relay position — same zero-attack relay, moved around the grid. Intensity is the
     # STA index, which is a stand-in for distance (see RELAY_POSITIONS).
     for idx in RELAY_POSITIONS:
-        for run in range(1, RELAY_POSITION_SEEDS + 1):
+        n_seeds = RELAY_CLEAN_SEEDS if idx == RELAY_CLEAN_POSITION else RELAY_POSITION_SEEDS
+        for run in range(1, n_seeds + 1):
             specs.append(Spec("IoMT-wifi_grey", f"relaypos_sta{idx}_r{run}",
                               ["--p=0.0", f"--relay={idx}", f"--run={run}"],
                               "relaypos", idx, run, "probe"))
+    # Grey-hole at the clean position — position-matched partner for the STA5 relay
+    # baseline, so the benign-vs-malicious comparison is not confounded by distance.
+    for p in GREY_CLEAN_POSITION_GRID:
+        for run in range(1, GREY_CLEAN_SEEDS + 1):
+            specs.append(Spec("IoMT-wifi_grey", f"greypos_sta{RELAY_CLEAN_POSITION}_p{p}_r{run}",
+                              [f"--p={p}", f"--relay={RELAY_CLEAN_POSITION}", f"--run={run}"],
+                              "greypos", p, run, "probe"))
     # Volume-matched DDoS — same total offered load, split across different attacker
     # counts. Intensity is the attacker count; the per-attacker rate is in the name.
     for na, rate in VOLUME_MATCHED_SPLITS:
