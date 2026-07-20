@@ -2,4 +2,6 @@
 # (The final frozen dataset is released separately, later.)
 raw/
 out/
+out_probes/
 manifest.csv
+manifest_probes.csv

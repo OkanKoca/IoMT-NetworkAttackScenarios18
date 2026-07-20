@@ -47,6 +47,7 @@ from multiprocessing import Pool
 HERE = os.path.dirname(os.path.abspath(__file__))
 RAW = os.path.join(HERE, "raw")
 MANIFEST = os.path.join(HERE, "manifest.csv")
+MANIFEST_PROBES = os.path.join(HERE, "manifest_probes.csv")
 NS3_DIR = os.path.expanduser("~/ns-3-dev")
 SCEN_SRC = os.path.abspath(os.path.join(HERE, "..", "scenarios"))
 BUILD_LIB = os.path.join(NS3_DIR, "build", "lib")          # shared libs for the raw binary
@@ -82,6 +83,62 @@ DDOS_NATTACKERS_GRID = [1, 2, 3, 5, 8]           # DDoS intensity: number of flo
 DDOS_SEEDS = 5                                   # fewer seeds — DDoS runs are expensive
 BLACKHOLE_INTENSITY = 1.0                        # single point (= grey-hole p=1 endpoint)
 
+# --- Probe configurations (evaluated, NOT trained on) ---------------------
+# A probe answers "what does the detector, as trained, say about THIS?" Probes are
+# swept here so the whole regeneration is paid once, but they are written to a
+# SEPARATE manifest so they cannot leak into training.
+#
+# Three reasons a configuration belongs here rather than in the training set:
+#   1. Its feature vector is indistinguishable from an existing class, so training on
+#      it would put one vector under two labels (label noise). This already cost us
+#      once: training the sub-10 stealth DoS points raised the false-alarm rate from
+#      12.5% to 35% and dropped macro-F1 0.809 -> 0.741.
+#   2. The question is about generalization ("what does it do with an attack modality
+#      it never saw?"), which training on the answer would destroy.
+#   3. Keeping the training set fixed keeps the headline numbers comparable across
+#      this change -- a probe cannot move them.
+#
+# TIMING-MITM. Deliberately a probe FIRST. The scientific question is not "can a model
+# separate six classes" (ordinary) but "what does a detector trained on volume and
+# delivery attacks say about a TIMING attack it has never seen?" -- and the expected
+# answer, that it reports greyhole, is direct evidence for this project's thesis that
+# flow-based detection reads mechanism rather than intent. Promoting mitm to a training
+# class stays open, but it is a decision to make with the probe result in hand: mitm at
+# low delay is byte-identical to grey p=0, so training it risks turning greyhole (F1
+# 0.944) into a confusable pair -- the same failure that dos<->ddos already has.
+# delay=0 is absent on purpose: it IS grey p=0, measured below as the relay baseline.
+MITM_DELAYS_MS = [1, 2, 5, 10, 20, 50, 100, 200]
+MITM_SEEDS = 10
+# RELAY BASELINE. grey p=0 = an on-path relay that drops nothing. Not a training class
+# (its behaviour is indistinguishable from doing nothing, so it cannot carry an attack
+# label), but it is the zero point BOTH the grey delivery curve and the mitm timing
+# curve must be read against: an intensity curve only shows the variable being swept,
+# and the relay is present at every point. Extended 10 -> 40 seeds to match the normal
+# baseline's seed count, so the two can be compared without an n mismatch. (docs/19)
+RELAY_BASELINE_SEEDS = 40
+# RELAY POSITION. The relay has always been STA8, the node FARTHEST from the AP
+# (31.6 m), so its measured cost mixes "an extra hop" with "a distant node". Sweeping
+# the position with the attack switched off (p=0) separates them. Indices are distances
+# on the grid: STA5 10.0 m, STA6 14.1 m, STA7 22.4 m, STA8 31.6 m, STA4 40.0 m. Until
+# this is measured, the relay's -2.09 sigma delivery cost must be reported as specific
+# to this topology. (docs/19 section 7)
+RELAY_POSITIONS = [5, 6, 7, 4]                   # 8 is covered by the baseline above
+RELAY_POSITION_SEEDS = 10
+# VOLUME-MATCHED DoS/DDoS. The detector's weakest pair (dos F1 0.672, ddos 0.577)
+# confuses them in both directions, and the standing explanation is that one strong
+# flood and several weak ones carry the same volume signature. That is a hypothesis
+# about WHICH feature is doing the work, and it is testable: hold total offered load
+# fixed at 200 pkt/s and vary only how it is distributed across attackers. If flow
+# COUNT still separates them, the confusion is a grid artifact and more configs fix
+# it; if it does not, "indistinguishable at equal volume" becomes a defensible finding.
+# Either outcome is a result. A probe rather than training data because the existing
+# ddos intensity axis is the attacker count, and these configs share attacker counts
+# with the trained ones while meaning something different -- as training rows they
+# would silently merge into the wrong config groups under the grouped CV.
+VOLUME_MATCHED_TOTAL = 200                       # pkt/s, matches the trained dos rate200
+VOLUME_MATCHED_SPLITS = [(2, 100), (4, 50), (8, 25)]  # (attackers, per-attacker rate)
+VOLUME_MATCHED_SEEDS = 10
+
 # Scenario -> (source file, ns-3 target name). The functional attacks (docs/07).
 SCENARIOS = {
     "normal": ("IoMT-wifi_wip.cc", "IoMT-wifi_wip"),
@@ -89,6 +146,7 @@ SCENARIOS = {
     "greyhole": ("IoMT-wifi_grey.cc", "IoMT-wifi_grey"),
     "ddos": ("IoMT-wifi_ddos.cc", "IoMT-wifi_ddos"),
     "blackhole": ("IoMT-wifi_black.cc", "IoMT-wifi_black"),
+    "mitm": ("IoMT-wifi_mitm.cc", "IoMT-wifi_mitm"),
 }
 
 # Shared headers the scenarios #include. Copied into scratch/ alongside the .cc
@@ -98,7 +156,15 @@ SHARED_HEADERS = ["iomt-noise.h"]
 
 # One planned run: what build_dataset.py needs (scenario/intensity/run) plus how to
 # launch it (target binary + CLI args). The manifest and the job list both derive from these.
-Spec = namedtuple("Spec", "target name extra_args scenario intensity run")
+#
+# `split` routes the run to one of two manifests: "train" -> manifest.csv (the dataset the
+# detector is fitted on), "probe" -> manifest_probes.csv (configurations the detector is only
+# ASKED about). Both are swept in the same parallel pool -- the split is about which file the
+# metadata lands in, not about how the run executes. Keeping them in separate files rather
+# than one file with a column means a probe cannot reach training by someone forgetting to
+# filter: build_dataset.py reads one manifest and knows nothing about splits.
+Spec = namedtuple("Spec", "target name extra_args scenario intensity run split",
+                  defaults=("train",))
 
 
 def sh(cmd, **kw):
@@ -192,15 +258,56 @@ def build_specs():
         for run in range(1, N_SEEDS + 1):
             specs.append(Spec("IoMT-wifi_grey", f"greyhole_p{p}_r{run}",
                               [f"--p={p}", f"--run={run}"], "greyhole", p, run))
+
+    # --- Probes: swept here, but written to a separate manifest (see Spec) --------
+    # Timing-MITM — sweep the added hold. Intensity is the delay in ms.
+    for d in MITM_DELAYS_MS:
+        for run in range(1, MITM_SEEDS + 1):
+            specs.append(Spec("IoMT-wifi_mitm", f"mitm_d{d}_r{run}",
+                              [f"--delay={d}", f"--run={run}"], "mitm", d, run, "probe"))
+    # Relay baseline — grey p=0, the on-path relay with the attack switched off.
+    for run in range(1, RELAY_BASELINE_SEEDS + 1):
+        specs.append(Spec("IoMT-wifi_grey", f"relay_p0_r{run}",
+                          ["--p=0.0", f"--run={run}"], "relay", 0.0, run, "probe"))
+    # Relay position — same zero-attack relay, moved around the grid. Intensity is the
+    # STA index, which is a stand-in for distance (see RELAY_POSITIONS).
+    for idx in RELAY_POSITIONS:
+        for run in range(1, RELAY_POSITION_SEEDS + 1):
+            specs.append(Spec("IoMT-wifi_grey", f"relaypos_sta{idx}_r{run}",
+                              ["--p=0.0", f"--relay={idx}", f"--run={run}"],
+                              "relaypos", idx, run, "probe"))
+    # Volume-matched DDoS — same total offered load, split across different attacker
+    # counts. Intensity is the attacker count; the per-attacker rate is in the name.
+    for na, rate in VOLUME_MATCHED_SPLITS:
+        for run in range(1, VOLUME_MATCHED_SEEDS + 1):
+            specs.append(Spec("IoMT-wifi_ddos", f"volmatch_na{na}_r{rate}_run{run}",
+                              [f"--nattackers={na}", f"--rate={rate}", f"--run={run}"],
+                              "volmatch_ddos", na, run, "probe"))
+    # The single-flooder reference point at the same total load, run through the DoS
+    # scenario. dos rate200 already exists in training, but re-running it under the probe
+    # label keeps the comparison inside one manifest and one seed set, so the four
+    # configurations differ ONLY in how the load is split.
+    for run in range(1, VOLUME_MATCHED_SEEDS + 1):
+        specs.append(Spec("IoMT-wifi_wip_dos", f"volmatch_na1_r{VOLUME_MATCHED_TOTAL}_run{run}",
+                          [f"--rate={VOLUME_MATCHED_TOTAL}", f"--run={run}"],
+                          "volmatch_dos", 1, run, "probe"))
     return specs
 
 
 def write_manifest(specs):
-    """Write the metadata manifest build_dataset.py consumes (independent of run outcome)."""
-    with open(MANIFEST, "w") as fh:
-        fh.write("file,scenario,intensity,run\n")
-        for s in specs:
-            fh.write(f"raw/{s.name}.xml,{s.scenario},{s.intensity},{s.run}\n")
+    """Write one manifest per split; both are what build_dataset.py consumes.
+
+    Written from the planned-run list, so the manifests describe what was ASKED for
+    independently of what any individual run did -- a failed run leaves a missing XML that
+    build_dataset.py will complain about by name, which is louder than a silently short file.
+    """
+    for split, path in (("train", MANIFEST), ("probe", MANIFEST_PROBES)):
+        rows = [s for s in specs if s.split == split]
+        with open(path, "w") as fh:
+            fh.write("file,scenario,intensity,run\n")
+            for s in rows:
+                fh.write(f"raw/{s.name}.xml,{s.scenario},{s.intensity},{s.run}\n")
+        print(f"Wrote {os.path.basename(path)} with {len(rows)} runs.")
 
 
 def main():
@@ -212,11 +319,12 @@ def main():
     args = ap.parse_args()
 
     specs = build_specs()
-    print(f"Planned {len(specs)} runs.")
+    n_train = sum(1 for s in specs if s.split == "train")
+    print(f"Planned {len(specs)} runs ({n_train} train, {len(specs) - n_train} probe).")
 
     if args.dry_run:
         for s in specs:
-            print(f"[dry] {s.target} {' '.join(s.extra_args)} --output=raw/{s.name}")
+            print(f"[dry:{s.split:5s}] {s.target} {' '.join(s.extra_args)} --output=raw/{s.name}")
         return
 
     os.makedirs(RAW, exist_ok=True)
@@ -240,7 +348,6 @@ def main():
             print(f"[{i}/{len(jobs)}] {status:4s} {name}")
 
     print(f"\nDone: {n_ok} ran, {n_skip} skipped, {len(fails)} failed ({args.jobs} workers).")
-    print(f"Wrote {MANIFEST} with {len(specs)} runs.")
     if fails:
         print("Failures (last stderr line):")
         for name, detail in fails:
