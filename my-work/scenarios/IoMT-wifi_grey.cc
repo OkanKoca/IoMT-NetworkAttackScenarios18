@@ -37,6 +37,8 @@
 
 #include "iomt-noise.h"               // shared per-run stochasticity helpers
 
+#include <iostream>                   // std::cerr for the co-location warning below
+
 using namespace ns3;
 
 // Registers a named log component so NS_LOG_* macros can target this file.
@@ -196,6 +198,22 @@ main(int argc, char* argv[])
     {
         NS_FATAL_ERROR("--relay must be in [3,8]: STA0 is the monitor sink, STA1 the "
                        "telemetry sink, STA2 the ECG source, and only 9 STAs exist.");
+    }
+    // STA3..STA7 are legal but NOT empty: each also sources a ward device (iomt-noise.h).
+    // Hosting the relay there is allowed -- a position sweep needs those nodes -- but the
+    // run then measures "relay + that device on one node", which is not the same quantity
+    // as STA8, the only STA with no traffic of its own. STA7 matters most: it sources the
+    // heavy imaging flow that drives congestion, so a relay placed there is measured under
+    // a different load than a relay anywhere else. Comparing positions without accounting
+    // for this reads a co-location difference as a distance effect.
+    if (relayIndex >= 3 && relayIndex <= 7)
+    {
+        static const char* kOccupant[] = {"ventilator (64 kbps)", "pulse oximeter (8 kbps)",
+                                          "NIBP cuff (2 kbps)", "infusion pump (16 kbps)",
+                                          "HEAVY imaging gateway (congestion driver)"};
+        std::cerr << "WARNING: STA" << relayIndex << " also sources the "
+                  << kOccupant[relayIndex - 3] << ", so this run measures the relay AND that "
+                  << "device on one node. STA8 is the only STA with no traffic of its own.\n";
     }
 
     // SetSeed fixes the base seed; SetRun picks an independent substream, so
