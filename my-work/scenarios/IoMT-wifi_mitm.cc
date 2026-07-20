@@ -42,6 +42,7 @@
  *
  * Parameters:
  *   --delay   mean added hold in ms (attack intensity knob); 0 = benign relay
+ *   --relay   STA index hosting the relay, 3..8 (distance knob; default 8)
  *   --run     RNG run number for an independent replication (seed)
  *   --output  output FlowMonitor XML prefix (without .xml)
  * ---------------------------------------------------------------------------
@@ -224,9 +225,15 @@ main(int argc, char* argv[])
     // The ward's congestion driver; calibrated in iomt-noise.h (docs/18).
     double heavyMbps = IOMT_HEAVY_MBPS;
     double heavySpread = IOMT_HEAVY_SPREAD; // 0 = exactly heavyMbps (calibration)
+    // Which STA hosts the relay -- same knob, same meaning, same default as IoMT-wifi_grey.cc.
+    // It has to stay symmetric with grey because `mitm delay=0` and `grey p=0` are the same
+    // physical thing (an on-path relay doing nothing), and that identity is what anchors the
+    // zero point of the timing curve. A different default here would silently break it.
+    uint32_t relayIndex = 8;
     // CommandLine parses --key=value pairs; AddValue binds a flag to a variable.
     CommandLine cmd;
     cmd.AddValue("delay", "Mean added hold in ms (0 = benign relay); actual ~U[0.5d,1.5d]", delayMs);
+    cmd.AddValue("relay", "STA index hosting the relay (distance knob; 3-8, default 8)", relayIndex);
     cmd.AddValue("run", "RNG run number for an independent replication (seed)", rngRun);
     cmd.AddValue("output", "Output filename prefix, without .xml", output);
     cmd.AddValue("heavy", "Imaging/video gateway offered load in Mbps (0 = off)", heavyMbps);
@@ -234,6 +241,14 @@ main(int argc, char* argv[])
     cmd.Parse(argc, argv); // overwrites the defaults above from argv
 
     NS_ABORT_MSG_IF(delayMs < 0.0, "--delay must be >= 0");
+
+    // Same rejection as IoMT-wifi_grey.cc: STA0/1/2 already hold the monitor sink, the
+    // telemetry sink and the ECG source, and only 9 STAs exist.
+    if (relayIndex < 3 || relayIndex > 8)
+    {
+        NS_FATAL_ERROR("--relay must be in [3,8]: STA0 is the monitor sink, STA1 the "
+                       "telemetry sink, STA2 the ECG source, and only 9 STAs exist.");
+    }
 
     // SetSeed fixes the base seed; SetRun picks an independent substream, so
     // different --run values give reproducible-but-different randomness.
@@ -314,7 +329,7 @@ main(int argc, char* argv[])
     uint16_t monitorPort = 8080;  // real patient-monitor sink port
     uint16_t relayPort = 7070;    // port the MITM relay listens on
     Address monitorAddress(InetSocketAddress(wifiInterfaces.GetAddress(0), monitorPort));   // STA 0
-    Address relayAddress(InetSocketAddress(wifiInterfaces.GetAddress(8), relayPort)); // STA 8 attacker
+    Address relayAddress(InetSocketAddress(wifiInterfaces.GetAddress(relayIndex), relayPort));
 
     // Real patient-monitor sink on STA 0.
     PacketSinkHelper monitorSink("ns3::UdpSocketFactory", monitorAddress);
@@ -336,7 +351,7 @@ main(int argc, char* argv[])
     // Timing-MITM relay on STA 8: forwards everything, but ~d ms late.
     Ptr<TimingMitmRelay> relay = CreateObject<TimingMitmRelay>();
     relay->Setup(relayPort, monitorAddress, delayMs);
-    wifiNodes.Get(8)->AddApplication(relay);
+    wifiNodes.Get(relayIndex)->AddApplication(relay);
     relay->SetStartTime(Seconds(1.0)); // listening before control traffic begins
     // The 10 s gap between the victim stopping (20 s) and the relay stopping
     // leaves room for the longest held packet to still be delivered.

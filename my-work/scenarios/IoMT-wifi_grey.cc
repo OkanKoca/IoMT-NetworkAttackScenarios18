@@ -19,6 +19,7 @@
  *
  * Parameters:
  *   --p       drop probability (attack intensity knob), 0.0 .. 1.0
+ *   --relay   STA index hosting the relay, 3..8 (distance knob; default 8)
  *   --run     RNG run number for an independent replication (seed)
  *   --output  output FlowMonitor XML prefix (without .xml)
  * ---------------------------------------------------------------------------
@@ -171,14 +172,31 @@ main(int argc, char* argv[])
     // The ward's congestion driver; calibrated in iomt-noise.h (docs/18).
     double heavyMbps = IOMT_HEAVY_MBPS;
     double heavySpread = IOMT_HEAVY_SPREAD; // 0 = exactly heavyMbps (calibration)
+    // Which STA hosts the relay. Default 8 keeps every earlier run reproducible.
+    // The grid places STA i at ((i%5)*10, (i/5)*10) with the AP at the origin, so the
+    // index IS a distance: STA5 10.0 m, STA6 14.1 m, STA7 22.4 m, STA8 31.6 m, STA4 40.0 m.
+    // The measured cost of an on-path relay therefore mixes two causes -- the extra hop and
+    // the relay's own distance from the AP -- and sweeping this flag is what separates them.
+    // STA0/1/2 are taken (monitor sink, telemetry sink, ECG source); picking one would
+    // silently collapse two roles onto one node, so they are rejected below.
+    uint32_t relayIndex = 8;
     // CommandLine parses --key=value pairs; AddValue binds a flag to a variable.
     CommandLine cmd;
     cmd.AddValue("p", "Grey-hole drop probability (0.0 = none, 1.0 = blackhole)", dropProb);
+    cmd.AddValue("relay", "STA index hosting the relay (distance knob; 3-8, default 8)", relayIndex);
     cmd.AddValue("run", "RNG run number for an independent replication (seed)", rngRun);
     cmd.AddValue("output", "Output filename prefix, without .xml", output);
     cmd.AddValue("heavy", "Imaging/video gateway offered load in Mbps (0 = off)", heavyMbps);
     cmd.AddValue("heavyspread", "Per-run fractional spread of the imaging rate", heavySpread);
     cmd.Parse(argc, argv); // overwrites the defaults above from argv
+
+    // Reject a relay index that would double-book a node whose role is already fixed,
+    // rather than producing a run that looks valid but measures something else.
+    if (relayIndex < 3 || relayIndex > 8)
+    {
+        NS_FATAL_ERROR("--relay must be in [3,8]: STA0 is the monitor sink, STA1 the "
+                       "telemetry sink, STA2 the ECG source, and only 9 STAs exist.");
+    }
 
     // SetSeed fixes the base seed; SetRun picks an independent substream, so
     // different --run values give reproducible-but-different randomness.
@@ -273,7 +291,7 @@ main(int argc, char* argv[])
     // InetSocketAddress(ip, port) wraps an IPv4 endpoint; GetAddress(i) returns
     // the IP assigned to interface i (STA index) above.
     Address monitorAddress(InetSocketAddress(wifiInterfaces.GetAddress(0), monitorPort));   // STA 0
-    Address relayAddress(InetSocketAddress(wifiInterfaces.GetAddress(8), relayPort)); // STA 8 attacker
+    Address relayAddress(InetSocketAddress(wifiInterfaces.GetAddress(relayIndex), relayPort));
 
     // Real patient-monitor sink on STA 0.
     // PacketSinkHelper installs a server that just absorbs incoming packets.
@@ -294,11 +312,11 @@ main(int argc, char* argv[])
     ecgApp.Start(Seconds(2.0)); // starts AFTER the relay is listening (1.0s)
     ecgApp.Stop(Seconds(20.0));
 
-    // Grey-hole relay on STA 8: forward survivors to the real monitor with prob (1-p).
+    // Grey-hole relay: forward survivors to the real monitor with prob (1-p).
     Ptr<GreyholeRelay> relay = CreateObject<GreyholeRelay>();
     relay->Setup(relayPort, monitorAddress, dropProb);
-    // AddApplication attaches our custom app to the attacker node (STA 8).
-    wifiNodes.Get(8)->AddApplication(relay);
+    // AddApplication attaches our custom app to the attacker node.
+    wifiNodes.Get(relayIndex)->AddApplication(relay);
     relay->SetStartTime(Seconds(1.0)); // listening before control traffic begins
     relay->SetStopTime(Seconds(simulationTime));
 
