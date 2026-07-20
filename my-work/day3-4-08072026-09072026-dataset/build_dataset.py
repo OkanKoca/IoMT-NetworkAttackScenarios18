@@ -90,6 +90,7 @@ def parse_xml(path):
                 "lost": lost,
                 "rx_bytes": rx_bytes,
                 "t_first_tx": t_first_tx,
+                "t_first_rx": t_first_rx,
                 "t_last_rx": t_last_rx,
                 # bit/s -> Mbit/s over the flow's own active window; guard empty window.
                 "throughput_mbps": (rx_bytes * 8.0 / window / 1e6) if window > 0 else 0.0,
@@ -148,11 +149,58 @@ def _victim_timing(flows):
     if not monitor:
         return float("nan"), float("nan")
     last = max(monitor, key=lambda f: f["rx"])  # busiest, mirroring the rule below
+    if last["rx"] <= 0:
+        # The monitor flow EXISTS but delivered nothing (a flood that collapsed the victim
+        # path). Per-flow owd/pdv are 0.0 there only because there is nothing to average, so
+        # passing them through would record the most severe runs as the FASTEST possible --
+        # the same wrong-direction signal this function was written to remove. A path that
+        # delivered no packet has no delay to report: that is missingness, not zero.
+        return float("nan"), float("nan")
     relay_in = [f for f in flows if f["role"] == "relay_in"]
     if not relay_in:
         return last["owd_ms"], last["pdv_ms"]  # no relay: the 8080 flow IS the path
     first = max(relay_in, key=lambda f: f["rx"])
     return first["owd_ms"] + last["owd_ms"], first["pdv_ms"] + last["pdv_ms"]
+
+
+def _victim_startup_lag(flows):
+    """Time from the victim source's first transmission to the monitor's first reception, in ms.
+
+    This closes a measurement gap that the per-flow metrics structurally cannot see.
+    FlowMonitor times each flow's own transit (its tx -> its rx). When a relay sits on the
+    path it TERMINATES the sensor->relay flow and ORIGINATES a fresh relay->monitor flow, so
+    any time the relay spends holding a packet falls BETWEEN the two flows: the second flow's
+    tx timestamp is taken after the hold, leaving its transit unchanged. Mean jitter is blind
+    for the same reason -- RFC1889's D(i,j) = (Rj-Ri) - (Sj-Si) cancels a constant hold to
+    exactly zero when transit is constant. Measured: a relay holding ~200 ms moved monitor_owd
+    by nothing (it stayed in the 28-42 ms band across the whole hold range).
+
+    Spanning the legs from the FIRST tx of the source to the FIRST rx at the monitor puts the
+    relay's own dwell time inside the measured interval, so it becomes visible. Measured across
+    a 0-200 ms hold sweep it rises monotonically (23 -> 145 ms).
+
+    Two properties to read it correctly:
+      * It is a SINGLE-PACKET observation, so it is noisier than the mean-based timing
+        features (~13 ms spread at zero hold). It resolves differences of that order, not
+        smaller ones.
+      * It tracks roughly HALF the nominal hold, because the first packet to arrive is the
+        least-delayed one -- the low end of the relay's U[0.5d, 1.5d] jitter.
+
+    The flow-selection rule mirrors _victim_timing (busiest flow per leg) so that every
+    victim-path feature describes the same physical path. Returns nan when nothing reaches
+    the monitor (blackhole, grey p=1), matching the other victim-path features.
+    """
+    monitor = [f for f in flows if f["role"] == "monitor"]
+    if not monitor:
+        return float("nan")
+    last = max(monitor, key=lambda f: f["rx"])
+    if last["rx"] <= 0:
+        return float("nan")  # a flow with no delivered packet has no first-reception time
+    relay_in = [f for f in flows if f["role"] == "relay_in"]
+    # With a relay the victim SOURCE is the sensor->relay leg; without one the monitor
+    # flow is itself sourced by the sensor.
+    source = max(relay_in, key=lambda f: f["rx"]) if relay_in else last
+    return (last["t_first_rx"] - source["t_first_tx"]) * 1000.0
 
 
 def run_features(flows, meta):
@@ -193,6 +241,9 @@ def run_features(flows, meta):
         # --- timing ---
         "monitor_owd_ms": monitor_owd,
         "monitor_pdv_ms": monitor_pdv,
+        # Spans the relay's internal dwell time, which the per-flow transit metrics above
+        # cannot see by construction. See _victim_startup_lag.
+        "victim_startup_lag_ms": _victim_startup_lag(flows),
         "mean_owd_ms": (sum(f["owd_ms"] for f in active) / len(active)) if active else float("nan"),
         "mean_pdv_ms": (sum(f["pdv_ms"] for f in active) / len(active)) if active else float("nan"),
         # --- contrast ---
