@@ -70,19 +70,25 @@ def sha256(path):
     return h.hexdigest()
 
 
-def git_commit():
+def git_commit(outdir):
     """The commit that produced this release, or a marker when the tree is dirty.
 
     A dirty tree means the artifacts cannot be reproduced from any commit, which is
     exactly the situation the provenance record exists to expose -- so record it
     rather than silently pinning the last clean commit.
+
+    outdir is excluded from the check. The claim being recorded is "this commit's code
+    and inputs produced these files", and the files themselves are necessarily
+    uncommitted while they are being written -- counting them would make the marker
+    unconditional, which is the same as not having one.
     """
     try:
         rev = subprocess.run(["git", "rev-parse", "HEAD"], cwd=HERE, capture_output=True,
                              text=True, check=True).stdout.strip()
-        dirty = subprocess.run(["git", "status", "--porcelain"], cwd=HERE,
-                               capture_output=True, text=True, check=True).stdout.strip()
-        return rev + ("+dirty" if dirty else "")
+        status = subprocess.run(["git", "status", "--porcelain", "--", ":!" + str(outdir)],
+                                cwd=HERE, capture_output=True, text=True,
+                                check=True).stdout.strip()
+        return rev + ("+dirty" if status else "")
     except (subprocess.CalledProcessError, FileNotFoundError):
         return "unknown"
 
@@ -157,7 +163,7 @@ def freeze(version, outdir):
     meta = {
         "version": version,
         "frozen_on": date.today().isoformat(),
-        "git_commit": git_commit(),
+        "git_commit": git_commit(outdir),
         "dataset": {
             "file": ds_path.name,
             "sha256": sha256(ds_path),
