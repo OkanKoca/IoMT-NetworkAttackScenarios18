@@ -26,8 +26,14 @@ docs/
 .vscode/
 .idea/
 
-# Generated report (local)
+# Report drafts (local). Hand-edited working documents, superseded by a single
+# consolidated report. Listed by name rather than as IoMT-*.docx so that the final
+# report is not silently ignored along with them.
 IoMT-Yontem-ve-Kararlar-Raporu.docx
+IoMT-Degerlendirme-ve-EDA-Raporu.docx
+IoMT-Gurultu-ve-Tasarim-Kararlari-Raporu.docx
+IoMT-Progress-Report-2026-07-21.docx
+IoMT-Simulasyon-Tabani-ve-Yeni-Veri-Seti-Raporu.docx
 
 # Report generator: writes a .docx from scratch, while the reports themselves are
 # hand-edited and kept out of the repo. Keeping it tracked invites regenerating
