@@ -1,0 +1,163 @@
+{
+  "generated_from": {
+    "release": "v1.1",
+    "git_commit": "80cd580731b948464771874d011c9ad61d72a74e",
+    "dataset_sha256": "ee9d8ea2713b7b812d20e6823aa2d9e3ab7048515c30ffb90c6f854d09fbc67b",
+    "model_sha256": "8e3b5c25cd0f6c2be40090505a2bcca099fc6a4a2b2a2e06edbb35cd35933136",
+    "model_inputs": [
+      "n_flows",
+      "total_throughput_mbps",
+      "max_flow_throughput_mbps",
+      "max_flow_txpackets",
+      "flow_concentration",
+      "delivery_ratio",
+      "overall_loss_ratio",
+      "monitor_owd_ms",
+      "monitor_pdv_ms",
+      "mean_owd_ms",
+      "mean_pdv_ms",
+      "victim_startup_lag_ms",
+      "monitor_missing"
+    ],
+    "probes_note": "0 of 340 probe input vectors match any of 255 training input vectors (verified at freeze time)"
+  },
+  "dataset": {
+    "rows": 285,
+    "training_rows": 255,
+    "groups": 73,
+    "class_distribution": {
+      "greyhole": 110,
+      "dos": 100,
+      "normal": 40,
+      "ddos": 25,
+      "blackhole": 10
+    }
+  },
+  "cross_validation": {
+    "honest_grouped_macro_f1": 0.788,
+    "honest_std_across_folds": 0.0941,
+    "n_folds": 5,
+    "optimistic_shuffled_macro_f1": 0.8275,
+    "optimistic_std_across_folds": 0.0649,
+    "cost_of_grouped_split": 0.0395,
+    "macro_f1_if_stealth_dos_were_trained": 0.7616,
+    "cost_of_training_stealth_dos": 0.0264
+  },
+  "per_class_honest": {
+    "normal": {
+      "precision": 0.7556,
+      "recall": 0.85,
+      "f1": 0.8,
+      "support": 40
+    },
+    "dos": {
+      "precision": 0.6812,
+      "recall": 0.6714,
+      "f1": 0.6763,
+      "support": 70
+    },
+    "ddos": {
+      "precision": 0.6,
+      "recall": 0.6,
+      "f1": 0.6,
+      "support": 25
+    },
+    "greyhole": {
+      "precision": 0.981,
+      "recall": 0.9364,
+      "f1": 0.9581,
+      "support": 110
+    },
+    "blackhole": {
+      "precision": 0.9091,
+      "recall": 1.0,
+      "f1": 0.9524,
+      "support": 10
+    },
+    "macro_f1_pooled": 0.7974
+  },
+  "binary_honest": {
+    "tn": 34,
+    "fp": 6,
+    "fn": 11,
+    "tp": 204,
+    "attack_precision": 0.9714,
+    "attack_recall": 0.9488,
+    "attack_f1": 0.96,
+    "false_alarm_rate": 0.15
+  },
+  "relay_baseline": {
+    "seeds": 40,
+    "false_alarm_floor_no_relay_no_attack": 0.15,
+    "R0_relay_present_no_attack": 0.975,
+    "detection_added_by_relay_alone": 0.825,
+    "headroom_left_for_the_attack": 0.025,
+    "class_assignment": {
+      "greyhole": 36,
+      "dos": 2,
+      "normal": 1,
+      "blackhole": 1
+    },
+    "runs_with_total_delivery_collapse": 2,
+    "delivery_mean": 0.8289,
+    "delivery_median": 0.8833,
+    "delivery_std": 0.2078
+  },
+  "delivery_chain": {
+    "seeds_used": 10,
+    "note": "means over the seeds all three arms share; they are subtracted",
+    "normal": 0.9754,
+    "relay_p0": 0.9023,
+    "grey_p002": 0.8953,
+    "relay_cost": -0.0731,
+    "attack_gain": -0.007,
+    "share_from_attack_pct": 8.8,
+    "share_from_relay_pct": 91.2
+  },
+  "victim_startup_lag_ms_median": {
+    "by_scenario": {
+      "blackhole": null,
+      "ddos": 11.8,
+      "dos": 11.67,
+      "greyhole": 29.66,
+      "normal": 9.15
+    },
+    "mitm_by_added_delay_ms": {
+      "1.0": 28.05,
+      "2.0": 29.07,
+      "5.0": 31.89,
+      "10.0": 35.29,
+      "20.0": 40.73,
+      "50.0": 63.57,
+      "100.0": 99.29,
+      "200.0": 162.35
+    },
+    "note": "the sweep's lowest MITM delay is 1 ms; there is no 0 ms hold"
+  },
+  "quoted_from_notebooks": {
+    "volume_matched_typing_accuracy": {
+      "value": 0.74,
+      "std": 0.028,
+      "n": 40,
+      "rf_seeds": 20,
+      "per_attacker_count": {
+        "1": 0.45,
+        "2": 0.51,
+        "4": 1.0,
+        "8": 1.0
+      },
+      "source": "notebook 10",
+      "replaces": "the reported 92.5%, whose DoS arm and half of whose ddos na=2 arm were training rows (release v1 probe defect)",
+      "caveat": "the drop mixes three changes -- removal of the in-sample rows, new seeds, and averaging over 20 RF seeds instead of one -- which were not separated"
+    },
+    "dos_vs_ddos_balanced_accuracy": {
+      "unmatched": 0.662,
+      "damage_matched": 0.475,
+      "chance": 0.5,
+      "small_sample_penalty": 0.07,
+      "effect_of_matching": 0.117,
+      "source": "notebook 10",
+      "reading": "at equal damage the pair is not separable; what separated them was how much damage was done, not how many attackers"
+    }
+  }
+}
