@@ -1,0 +1,59 @@
+{
+  "version": "v1.1",
+  "frozen_on": "2026-07-21",
+  "git_commit": "80cd580731b948464771874d011c9ad61d72a74e",
+  "dataset": {
+    "file": "dataset_v1.1.csv",
+    "sha256": "ee9d8ea2713b7b812d20e6823aa2d9e3ab7048515c30ffb90c6f854d09fbc67b",
+    "rows": 285,
+    "class_distribution": {
+      "greyhole": 110,
+      "dos": 100,
+      "normal": 40,
+      "ddos": 25,
+      "blackhole": 10
+    }
+  },
+  "probes": {
+    "file": "probes_v1.1.csv",
+    "sha256": "8aa52fffd3ba223d6082d1a67ef8c22bb4cbb07472fbea2b43f9823149b35cfd",
+    "rows": 340,
+    "note": "evaluated only, never trained on",
+    "overlap_check": "0 of 340 probe input vectors match any of 255 training input vectors (verified at freeze time)"
+  },
+  "model": {
+    "file": "detector_v1.1.joblib",
+    "sha256": "8e3b5c25cd0f6c2be40090505a2bcca099fc6a4a2b2a2e06edbb35cd35933136",
+    "estimator": "RandomForestClassifier(n_estimators=300, class_weight='balanced', random_state=0)",
+    "features": [
+      "n_flows",
+      "total_throughput_mbps",
+      "max_flow_throughput_mbps",
+      "max_flow_txpackets",
+      "flow_concentration",
+      "delivery_ratio",
+      "overall_loss_ratio",
+      "monitor_owd_ms",
+      "monitor_pdv_ms",
+      "mean_owd_ms",
+      "mean_pdv_ms",
+      "victim_startup_lag_ms",
+      "monitor_missing"
+    ],
+    "classes": [
+      "blackhole",
+      "ddos",
+      "dos",
+      "greyhole",
+      "normal"
+    ],
+    "training_rows": 255,
+    "excluded_from_training": "dos with intensity < 10 (kept as evaluation probe)"
+  },
+  "environment": {
+    "python": "3.14.4",
+    "scikit_learn": "1.9.0",
+    "pandas": "3.0.3",
+    "joblib": "1.5.3"
+  }
+}
