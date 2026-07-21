@@ -101,18 +101,35 @@ Ayrım `normal`'e karşı değil **zararsız relay'e** karşı ölçüldüğünd
 Bir grey-hole'ün zararsız bir aracıdan ayrılması için paketlerin **en az %5–10'unu** düşürmesi
 gerekiyor. Altında saldırı, zararsız relay'in kendi gürültüsüne gömülüyor. (docs/23)
 
-### 5.3 dos ↔ ddos ayrımı zayıf — ama nedeni biliniyor ve düzeltilebilir
+### 5.3 dos ↔ ddos ayrımı zayıf — model "kaç saldırgan"ı değil "ne kadar hasar"ı okuyor
 
-İki sınıf çift yönlü karışıyor (F1 0.672 / 0.577). Sebep modelde değil **grid'de**: mevcut
-süpürmede saldırgan sayısı ile toplam hacim birbirine yapışık, dolayısıyla model hangisinin sinyal
-olduğunu öğrenemiyor.
+İki sınıf çift yönlü karışıyor (F1 0.672 / 0.577).
 
-**Kanıt:** toplam yük 200 pkt/s'de sabit tutulup yalnız saldırgan sayısı değiştirildiğinde doğru-tip
-oranı **0.925** (1 saldırgan → `dos` 1.00; 8 saldırgan → `ddos` 1.00). Yani ayrım bilgisi veride
-mevcut, eğitim grid'i onu ayrıştırmıyor. (docs/22 §3)
+Bir süre bunun **grid artefaktı** olduğu ve düzgün bir eğitim grid'iyle düzeltilebileceği
+düşünüldü. Dayanağı şuydu: toplam yük 200 pkt/s'de sabit tutulup yalnız saldırgan sayısı
+değiştirildiğinde doğru-tip oranı **0.925** çıkıyordu. **Bu dayanak 2026-07-21'de çürütüldü**
+(docs/24, notebook 10):
 
-*Sınır:* yük **teklif** düzeyinde eşitlendi, gerçekleşen throughput değil (11.35 → 5.78 Mbps).
-Ayrımı akış sayısının mı yoksa gerçekleşen hacim farkının mı taşıdığı henüz ayrışmamıştır.
+- O grid yükü **teklif** düzeyinde eşitliyor, **gerçekleşen hasarı değil**. Saldırgan sayısı
+  arttıkça çekişme artıyor ve delivery (0.897→0.626), kayıp (0.161→0.549), gecikme *hep
+  birlikte* kayıyor (ρ ≈ 0.85). Model saldırgan sayısını bu eksenlerin herhangi birinden
+  okuyabiliyor.
+- **Hiçbir feature grubu gerekli değil** — herhangi biri çıkarıldığında sonuç ≥0.891 kalıyor.
+- Ayrımı taşıdığı sanılan **akış sayısı en zayıf grup** (tek başına 0.823); hacim tek başına
+  0.907.
+- **Gerçekleşen hasar eşleştirildiğinde ayrım şansa iniyor:** 0.662 → **0.475** (şans 0.500).
+
+**Doğru okuma:** `ddos` sınıfı pratikte "saldırgan sayısı çok" değil **"hasar çok"** anlamına
+geliyor — `greyhole`'ün "relay var", `mitm`'in "relay düşürmüyor" anlamına gelmesiyle aynı
+desen (§5.1, §5.4). Koşu-başı 12 sayılık özet, "kaç saldırgan" bilgisini "ne kadar hasar"
+bilgisi içinde eritiyor.
+
+*Sınır (dürüstlük kaydı):* "dos ve ddos temelde ayrılamaz" **denmiyor.** Kontrol deneyi, bant
+daraltmanın küçük-örneklem cezasının da +0.070 taşıdığını gösterdi (eşleştirmenin kendi katkısı
++0.117), ve eşleştirmesiz kontrolün yayılımı geniş (±0.157). Söylenebilen: *ayrılabilir olduğu
+iddiasının dayanağı geçersiz.* Kalan belirsizliği çözecek olan daha iyi bir grid değil, **daha
+çok ddos konfigi** — sınıf 5 konfig / 25 koşu ile temsil ediliyor ve her fold tek konfig test
+ediyor. **Bu modeli dos/ddos ayrımı için kullanmayın.**
 
 ### 5.4 Zamanlama saldırıları görünmüyor
 
