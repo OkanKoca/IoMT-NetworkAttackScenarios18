@@ -82,14 +82,19 @@ def git_commit(outdir):
     uncommitted while they are being written -- counting them would make the marker
     unconditional, which is the same as not having one.
     """
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=HERE, capture_output=True,
+                              text=True, check=True).stdout.strip()
+
     try:
-        rev = subprocess.run(["git", "rev-parse", "HEAD"], cwd=HERE, capture_output=True,
-                             text=True, check=True).stdout.strip()
-        status = subprocess.run(["git", "status", "--porcelain", "--", ":!" + str(outdir)],
-                                cwd=HERE, capture_output=True, text=True,
-                                check=True).stdout.strip()
-        return rev + ("+dirty" if status else "")
-    except (subprocess.CalledProcessError, FileNotFoundError):
+        rev = git("rev-parse", "HEAD")
+        # The exclusion is anchored with (top) and given a path relative to the repo
+        # root. A bare ":!<path>" resolves against the working directory, so an absolute
+        # path silently matches nothing -- the exclusion looks applied and is not.
+        rel = Path(outdir).resolve().relative_to(Path(git("rev-parse", "--show-toplevel")))
+        return rev + ("+dirty" if git("status", "--porcelain", "--",
+                                      f":(exclude,top){rel}") else "")
+    except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
         return "unknown"
 
 
