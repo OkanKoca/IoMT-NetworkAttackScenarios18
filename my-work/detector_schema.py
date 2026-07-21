@@ -42,27 +42,33 @@ FEATURES = ["n_flows", "total_throughput_mbps", "max_flow_throughput_mbps",
 MODEL_INPUTS = FEATURES + ["monitor_missing"]
 
 
-def build_X(frame, allow_missing=()):
+def build_X(frame, feats=None, allow_missing=()):
     """The model's input matrix, built the one way it is built anywhere.
 
     A fully denied victim path has no delay to report, so its timing columns are NaN. The
     missingness is itself signal ("the path was fully denied"), so it is flagged in a
     column and then imputed to 0, rather than the row being dropped.
 
+    feats restricts the input to a subset, for ablation experiments. The missingness flag
+    follows the column it is derived from: dropping monitor_owd_ms from an ablation and
+    keeping a flag that describes it would leak the dropped feature back in.
+
     allow_missing names columns the caller knows are absent from this frame, which are
-    then treated as entirely missing (NaN -> 0). It exists for one case: the upstream
-    study's published FlowMonitor data, which predates some of our features. Passing a
-    name here is a claim that the feature is UNMEASURABLE in that source, not a way to
-    quiet a typo -- so anything not named is still required, and its absence still raises.
+    then treated as entirely missing (NaN -> 0). It exists for sources that predate a
+    feature. Passing a name here is a claim that the feature is UNMEASURABLE in that
+    source, not a way to quiet a typo -- so anything not named is still required, and its
+    absence still raises.
     """
-    missing = [c for c in FEATURES if c not in frame.columns]
-    unexpected = [c for c in missing if c not in allow_missing]
+    feats = list(FEATURES if feats is None else feats)
+    unexpected = [c for c in feats
+                  if c not in frame.columns and c not in allow_missing]
     if unexpected:
         raise KeyError(f"frame is missing required feature(s): {unexpected}. "
                        f"If they are genuinely unmeasurable in this source, name them in "
                        f"allow_missing; otherwise regenerate the frame.")
-    X = frame.reindex(columns=FEATURES).copy()
-    X["monitor_missing"] = frame["monitor_owd_ms"].isna().astype(int)
+    X = frame.reindex(columns=feats).copy()
+    if "monitor_owd_ms" in feats:
+        X["monitor_missing"] = frame["monitor_owd_ms"].isna().astype(int)
     return X.fillna(0.0)
 
 
