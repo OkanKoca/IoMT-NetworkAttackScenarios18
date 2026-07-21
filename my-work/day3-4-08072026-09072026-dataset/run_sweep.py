@@ -156,6 +156,13 @@ GREY_CLEAN_SEEDS = 10
 VOLUME_MATCHED_TOTAL = 200                       # pkt/s, matches the trained dos rate200
 VOLUME_MATCHED_SPLITS = [(2, 100), (4, 50), (8, 25)]  # (attackers, per-attacker rate)
 VOLUME_MATCHED_SEEDS = 10
+# Seeds start past the training grid's range on purpose. The single-flooder reference
+# arm is dos at rate 200, which is also a trained configuration -- run at seeds 1..10 it
+# reproduces the trained rows byte for byte, so "probe" would have been a label on copies
+# of training data. Shifting the seeds makes the arm genuinely unseen. The whole block
+# shifts together, not just that arm, because the comparison's premise is that the four
+# configurations differ ONLY in how the load is split; a per-arm seed set would break it.
+VOLUME_MATCHED_SEED_START = 11
 
 # Scenario -> (source file, ns-3 target name). The functional attacks (docs/07).
 SCENARIOS = {
@@ -304,16 +311,19 @@ def build_specs():
                               "greypos", p, run, "probe"))
     # Volume-matched DDoS — same total offered load, split across different attacker
     # counts. Intensity is the attacker count; the per-attacker rate is in the name.
+    vm_seeds = range(VOLUME_MATCHED_SEED_START,
+                     VOLUME_MATCHED_SEED_START + VOLUME_MATCHED_SEEDS)
     for na, rate in VOLUME_MATCHED_SPLITS:
-        for run in range(1, VOLUME_MATCHED_SEEDS + 1):
+        for run in vm_seeds:
             specs.append(Spec("IoMT-wifi_ddos", f"volmatch_na{na}_r{rate}_run{run}",
                               [f"--nattackers={na}", f"--rate={rate}", f"--run={run}"],
                               "volmatch_ddos", na, run, "probe"))
     # The single-flooder reference point at the same total load, run through the DoS
-    # scenario. dos rate200 already exists in training, but re-running it under the probe
-    # label keeps the comparison inside one manifest and one seed set, so the four
-    # configurations differ ONLY in how the load is split.
-    for run in range(1, VOLUME_MATCHED_SEEDS + 1):
+    # scenario. dos rate200 is also a trained configuration, so this arm is only a probe
+    # by virtue of its seeds (VOLUME_MATCHED_SEED_START) -- at the training seeds it would
+    # BE the training rows. Keeping it in this manifest and on this block's seed set is
+    # what makes the four configurations differ ONLY in how the load is split.
+    for run in vm_seeds:
         specs.append(Spec("IoMT-wifi_wip_dos", f"volmatch_na1_r{VOLUME_MATCHED_TOTAL}_run{run}",
                           [f"--rate={VOLUME_MATCHED_TOTAL}", f"--run={run}"],
                           "volmatch_dos", 1, run, "probe"))

@@ -15,9 +15,15 @@ edit of the old one.
 Order matters: freeze first, then fit the model on the frozen file. A model fitted
 on the working copy could not be tied to a specific dataset afterwards.
 
+Freezing is gated. The manifest asserts that the probe set was evaluated but never
+trained on, and that assertion is the one thing a reader cannot verify without
+re-running the whole pipeline -- so it is checked here before anything is written,
+and a violation aborts the freeze (see training_overlap). v1 shipped with the claim
+as a hand-written string and the string was false; v1.1 exists because of it.
+
 Usage:
-  python3 freeze_release.py --version v1
-  python3 freeze_release.py --version v1 --check   # verify an existing release
+  python3 freeze_release.py --version v1.1
+  python3 freeze_release.py --version v1.1 --check   # verify an existing release
 --------------------------------------------------------------------------
 """
 
@@ -92,6 +98,30 @@ def build_X(frame):
     return X.fillna(0.0)
 
 
+def training_overlap(probes, train):
+    """Probe rows whose model input is identical to a row the model was fitted on.
+
+    The released manifest claims the probe set was evaluated but never trained on. That
+    claim used to be a hand-written string, and it was wrong: the volume-matched DoS arm
+    re-ran dos rate200 at the training seeds, so ten "probe" rows were byte-identical
+    copies of ten training rows, and the out-of-sample check they supported was in-sample.
+    Nothing caught it because nothing ever compared the two files.
+
+    Comparison is on build_X output rather than the raw columns, for two reasons: it is
+    the vector the model actually sees, and it has no NaNs -- a merge on raw columns would
+    silently miss duplicates, since NaN never equals NaN.
+
+    Returns the offending pairs (probe run_id, training run_id) as a DataFrame; empty
+    means the claim holds.
+    """
+    key = list(build_X(train).columns)
+    p = build_X(probes).assign(probe_run_id=probes.run_id.values)
+    t = build_X(train).assign(train_run_id=train.run_id.values,
+                              train_scenario=train.scenario.values)
+    hits = p.merge(t, on=key, how="inner")
+    return hits[["probe_run_id", "train_run_id", "train_scenario"]]
+
+
 def freeze(version, outdir):
     outdir.mkdir(parents=True, exist_ok=True)
     ds_path = outdir / f"dataset_{version}.csv"
@@ -102,8 +132,22 @@ def freeze(version, outdir):
     shutil.copy2(PROBES_SRC, pr_path)
 
     df = pd.read_csv(ds_path)
+    pr = pd.read_csv(pr_path)
     tr = training_rows(df)
     X, y = build_X(tr), tr.label_class
+
+    # Refuse to cut a release whose probe set is not what the manifest will say it is.
+    # This is a gate, not a warning: the manifest's provenance claim is the one thing a
+    # reader cannot check without re-running the pipeline, so it has to be true by
+    # construction rather than by intent.
+    overlap = training_overlap(pr, tr)
+    if len(overlap):
+        print(f"REFUSING TO FREEZE: {len(overlap)} probe rows have the same model input as "
+              f"a training row, so they were trained on.\n", file=sys.stderr)
+        print(overlap.to_string(index=False), file=sys.stderr)
+        print("\nFix the sweep (usually a probe arm sharing a configuration AND a seed "
+              "with the training grid), regenerate, then freeze again.", file=sys.stderr)
+        sys.exit(1)
 
     # Same estimator and seed as every notebook that reports a number for it.
     model = RandomForestClassifier(n_estimators=300, class_weight="balanced", random_state=0)
@@ -123,8 +167,12 @@ def freeze(version, outdir):
         "probes": {
             "file": pr_path.name,
             "sha256": sha256(pr_path),
-            "rows": int(len(pd.read_csv(pr_path))),
+            "rows": int(len(pr)),
+            # Stated as a checked result, not an intention: freeze() exits non-zero if
+            # any probe row's model input matches a training row's (see training_overlap).
             "note": "evaluated only, never trained on",
+            "overlap_check": f"0 of {len(pr)} probe input vectors match any of "
+                             f"{len(tr)} training input vectors (verified at freeze time)",
         },
         "model": {
             "file": model_path.name,
@@ -167,6 +215,18 @@ def check(version, outdir):
     if sklearn.__version__ != meta["environment"]["scikit_learn"]:
         print(f"  WARNING  scikit-learn is {sklearn.__version__}, release used "
               f"{meta['environment']['scikit_learn']} -- the model may not load faithfully")
+
+    # Re-check the provenance claim, not just the hashes. A hash proves the files are the
+    # ones that were frozen; it says nothing about whether the note on them is true.
+    ds = outdir / meta["dataset"]["file"]
+    pr = outdir / meta["probes"]["file"]
+    if ds.exists() and pr.exists():
+        overlap = training_overlap(pd.read_csv(pr), training_rows(pd.read_csv(ds)))
+        print(f"  {'ok      ' if not len(overlap) else 'FAILED  '} probes never trained on"
+              f"{'' if not len(overlap) else f' ({len(overlap)} overlapping rows)'}")
+        if len(overlap):
+            print(overlap.to_string(index=False))
+        ok &= not len(overlap)
     return ok
 
 
