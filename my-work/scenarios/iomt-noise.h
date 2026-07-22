@@ -106,8 +106,14 @@ inline void AddReceiveNoise(NetDeviceContainer devices,
 // fits a 1500 B MTU once the IP+UDP headers are added, so a randomized size can
 // never silently start fragmenting (which would split one packet into two and
 // corrupt the per-flow packet accounting FlowMonitor reports).
+// headerBytes: bytes an application-level header will add on top of the payload.
+// The drawn size is the size ON THE WIRE, and the payload is set to that minus the
+// header, so switching an application to a header-carrying mode does not silently
+// enlarge its packets. That matters here beyond tidiness: the baseline's throughput
+// and its saturation point were calibrated at these sizes, so instrumentation that
+// grew them would move the very measurement it is being compared against.
 inline void SetNoisyOnOff(OnOffHelper& app, double baseRateBps, uint32_t basePkt,
-                          double spread = 0.2)
+                          double spread = 0.2, uint32_t headerBytes = 0)
 {
     Ptr<UniformRandomVariable> u = CreateObject<UniformRandomVariable>();
     const double lo = 1.0 - spread;
@@ -115,7 +121,8 @@ inline void SetNoisyOnOff(OnOffHelper& app, double baseRateBps, uint32_t basePkt
     double rate = baseRateBps * (lo + width * u->GetValue());
     app.SetAttribute("DataRate", DataRateValue(DataRate((uint64_t)rate)));
     uint32_t pkt = (uint32_t)std::clamp(basePkt * (lo + width * u->GetValue()), 64.0, 1472.0);
-    app.SetAttribute("PacketSize", UintegerValue(pkt));
+    NS_ABORT_MSG_IF(headerBytes >= pkt, "header would leave no payload");
+    app.SetAttribute("PacketSize", UintegerValue(pkt - headerBytes));
     app.SetAttribute("OnTime", StringValue("ns3::UniformRandomVariable[Min=0.5|Max=1.5]"));
     app.SetAttribute("OffTime", StringValue("ns3::UniformRandomVariable[Min=0.2|Max=1.0]"));
 }

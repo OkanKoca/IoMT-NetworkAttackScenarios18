@@ -57,6 +57,7 @@
 #include "ns3/mobility-module.h"      // node positions / mobility models
 #include "ns3/point-to-point-module.h"// wired P2P link (Hexoskin BLE emulation)
 #include "ns3/flow-monitor-module.h"  // per-flow statistics collection
+#include "ns3/seq-ts-size-header.h"   // source send stamp that survives the relay
 
 #include "iomt-noise.h"               // shared per-run stochasticity helpers
 
@@ -76,6 +77,47 @@ NS_LOG_COMPONENT_DEFINE("IoMTTimingMitm");
 // sockets, same node. The only difference is what happens to a received packet --
 // dropped with probability p there, held for a while here.
 // ---------------------------------------------------------------------------
+// --- True end-to-end delay ---------------------------------------------------
+// The measurement FlowMonitor structurally cannot make. Its transit is per FLOW,
+// and the relay ends one flow and begins another, so the hold falls between the
+// two and every flow's own transit stays unchanged. Jitter is blind for the same
+// reason: with D(i,j) = (Rj-Ri) - (Sj-Si), a hold that shifts sends and receives
+// together is exactly zero.
+//
+// The source's stamp, carried across the relay rather than discarded, closes that
+// gap -- and closes it by stepping OUTSIDE the flow abstraction, not by repairing
+// anything inside it. One sample per delivered packet, against the one sample per
+// RUN that victim_startup_lag_ms provides.
+class E2eDelay
+{
+  public:
+    // Trace signature of PacketSink::RxWithSeqTsSize.
+    void Rx(Ptr<const Packet>, const Address&, const Address&, const SeqTsSizeHeader& h)
+    {
+        m_ms.push_back((Simulator::Now() - h.GetTs()).GetSeconds() * 1000.0);
+    }
+    size_t Count() const { return m_ms.size(); }
+    double Mean() const
+    {
+        return m_ms.empty() ? 0.0
+                            : std::accumulate(m_ms.begin(), m_ms.end(), 0.0) / m_ms.size();
+    }
+    // Quantile by nearest rank on a sorted copy: the sample is small enough that
+    // sorting per call costs nothing, and mutating the record to read it would be
+    // a poor trade.
+    double Quantile(double q) const
+    {
+        if (m_ms.empty()) return 0.0;
+        std::vector<double> s(m_ms);
+        std::sort(s.begin(), s.end());
+        size_t i = (size_t)(q * (s.size() - 1));
+        return s[i];
+    }
+
+  private:
+    std::vector<double> m_ms;
+};
+
 class TimingMitmRelay : public Application
 {
   public:
@@ -97,7 +139,10 @@ class TimingMitmRelay : public Application
     // Receive callback: NS-3 invokes this every time a packet arrives.
     void HandleRead(Ptr<Socket> socket);
     // Deferred send: Simulator::Schedule() calls this once the hold has elapsed.
-    void Forward(uint32_t size);
+    // The header travels with the size because it carries the SOURCE's send stamp,
+    // and that stamp is the only thing downstream can use to see this hold. Building
+    // a fresh packet without it is what made the hold invisible to every feature.
+    void Forward(uint32_t size, SeqTsSizeHeader header);
 
     // Ptr<T> = NS-3 reference-counted smart pointer (auto-frees the object
     // when the last Ptr to it goes away; no manual delete needed).
@@ -167,6 +212,12 @@ TimingMitmRelay::HandleRead(Ptr<Socket> socket)
     // (evaluates false) when the queue is empty. 'from' is filled with sender.
     while ((packet = socket->RecvFrom(from)))
     {
+        // Take the source's sequence/timestamp header off the packet and keep it.
+        // RemoveHeader() strips the bytes, so what is left is the payload; the same
+        // header is put back in Forward(), which keeps the on-wire size identical
+        // AND keeps the original send stamp travelling to the monitor.
+        SeqTsSizeHeader tsHeader;
+        packet->RemoveHeader(tsHeader);
         // Hold time for THIS packet, drawn fresh: ~U[0.5d, 1.5d] ms.
         // Drawing per packet (not per run) is what makes the delay a jitter
         // source and not just a constant offset -- see the header note.
@@ -188,13 +239,14 @@ TimingMitmRelay::HandleRead(Ptr<Socket> socket)
         // no simulated delay and stays equivalent to the benign relay.
         // Only the size is captured: forwarding a fresh packet (rather than the
         // received object) avoids carrying its FlowMonitor tag into the next hop.
-        Simulator::Schedule(hold, &TimingMitmRelay::Forward, this, packet->GetSize());
+        Simulator::Schedule(hold, &TimingMitmRelay::Forward, this,
+                            packet->GetSize(), tsHeader);
         m_held++;
     }
 }
 
 void
-TimingMitmRelay::Forward(uint32_t size)
+TimingMitmRelay::Forward(uint32_t size, SeqTsSizeHeader header)
 {
     // The app may have stopped while this packet was being held. Sending on a
     // closed socket would be an error; count it as stranded instead. With the
@@ -210,7 +262,14 @@ TimingMitmRelay::Forward(uint32_t size)
     // (throughput, OWD, PDV, loss all depend on size/timing, not content).
     // It also means this scenario CANNOT be extended into content tampering
     // without first giving the victim traffic a real payload to corrupt.
+    //
+    // `size` is the PAYLOAD length -- HandleRead() removed the header before
+    // measuring it -- so re-adding the header restores the original on-wire size.
+    // The stamp inside it is still the source's, never this relay's: that is the
+    // whole point. A relay that re-stamped here would erase its own hold exactly
+    // the way building a fresh packet did.
     Ptr<Packet> fresh = Create<Packet>(size);
+    fresh->AddHeader(header);
     m_txSocket->Send(fresh);
     m_forwarded++;
 }
@@ -350,8 +409,17 @@ main(int argc, char* argv[])
     Address relayAddress(InetSocketAddress(wifiInterfaces.GetAddress(relayIndex), relayPort));
 
     // Real patient-monitor sink on STA 0.
+    // EnableSeqTsSizeHeader makes the sink parse the source's header and expose it on
+    // the RxWithSeqTsSize trace below. Safe to switch on here because this sink's port
+    // carries only the relay's forwarded victim traffic -- the background devices use
+    // their own ports and their own sinks (see iomt-noise.h). A sink told to expect the
+    // header on a port where untagged traffic also arrives would misparse it as payload.
     PacketSinkHelper monitorSink("ns3::UdpSocketFactory", monitorAddress);
+    monitorSink.SetAttribute("EnableSeqTsSizeHeader", BooleanValue(true));
     ApplicationContainer monitorApp = monitorSink.Install(wifiNodes.Get(0));
+    E2eDelay e2e;
+    monitorApp.Get(0)->TraceConnectWithoutContext("RxWithSeqTsSize",
+                                                 MakeCallback(&E2eDelay::Rx, &e2e));
     monitorApp.Start(Seconds(1.0));
     monitorApp.Stop(Seconds(simulationTime));
 
@@ -361,7 +429,11 @@ main(int argc, char* argv[])
     // carried by many small packets (see IoMT-wifi_wip.cc for the full rationale).
     // Packet COUNT is what sets how finely the timing distribution can be
     // resolved, so this victim path stays deliberately packet-rich.
-    SetNoisyOnOff(ecgTraffic, 128e3, 128); // per-run randomized rate/size/burst
+    // The header is subtracted from the payload so the on-wire packet stays the size
+    // the baseline was calibrated at; see SetNoisyOnOff.
+    const uint32_t kTsHeaderBytes = SeqTsSizeHeader().GetSerializedSize();
+    SetNoisyOnOff(ecgTraffic, 128e3, 128, 0.2, kTsHeaderBytes); // per-run randomized
+    ecgTraffic.SetAttribute("EnableSeqTsSizeHeader", BooleanValue(true));
     ApplicationContainer ecgApp = ecgTraffic.Install(wifiNodes.Get(2));
     ecgApp.Start(Seconds(2.0)); // starts AFTER the relay is listening (1.0s)
     ecgApp.Stop(Seconds(20.0));
@@ -412,6 +484,14 @@ main(int argc, char* argv[])
               << " stranded=" << relay->GetStranded()
               << " (delay=" << delayMs << "ms, realized mean hold="
               << relay->GetMeanHoldMs() << "ms)" << std::endl;
+
+    // The number this experiment exists to produce. Compare it against the relay's
+    // realized mean hold above: the difference is the path's own transit, and the
+    // TREND across the delay sweep is the intensity axis the flow features lack.
+    std::cout << "End-to-end delay (source stamp -> monitor): n=" << e2e.Count()
+              << " mean=" << e2e.Mean() << "ms"
+              << " median=" << e2e.Quantile(0.50) << "ms"
+              << " p95=" << e2e.Quantile(0.95) << "ms" << std::endl;
 
     // GetFlowStats() -> map<FlowId, FlowStats>; iterate for a quick per-flow view.
     std::map<FlowId, FlowMonitor::FlowStats> stats = monitor->GetFlowStats();
