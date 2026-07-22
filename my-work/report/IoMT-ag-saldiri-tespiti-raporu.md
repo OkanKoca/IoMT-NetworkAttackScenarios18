@@ -18,8 +18,10 @@ saldırılarını simüle eden mevcut bir NS-3 çalışmasının üzerine kurulm
 
 Üretilen veri seti **285 simülasyon koşusu** içerir; her koşu beş sınıftan birine aittir
 (`normal`, `dos`, `ddos`, `greyhole`, `blackhole`) ve koşu başına 13 sayısal özellikle
-temsil edilir. Konfigürasyon-grupli, iyimserliği kırılmış bir değerlendirme altında detektörün
-çok-sınıflı makro-F1 skoru **0.788 ± 0.094**, ikili (saldırı var/yok) F1 skoru **0.960**'tır.
+temsil edilir. Aynı saldırı ayarının bütün koşularını eğitim ve test kümesinin **tek bir
+tarafında** tutan, dolayısıyla modeli daha önce hiç görmediği bir saldırı şiddetiyle sınayan
+bir değerlendirme altında (*grouped split*, §5.2) detektörün çok-sınıflı makro-F1 skoru
+**0.788 ± 0.094**, ikili (saldırı var/yok) F1 skoru **0.960**'tır.
 Yeni saldırı olarak seçilen **grey-hole (seçici iletmeme)** güvenilir biçimde tanınmaktadır
 (F1 **0.958**). Buna karşılık `dos` ve `ddos` sınıfları birbirine karışmaktadır (F1 0.676 /
 0.600) ve bu raporun bir bölümü bunun neden bir eğitim eksikliği değil, ölçüm tasarımının
@@ -42,10 +44,21 @@ ondan sonra model. Her bölüm, ne kurduğunu ve neden gerekli olduğunu söyley
 paragrafla açılır; yalnızca bu açılış paragraflarını okuyan biri de çalışmanın tamamını
 takip edebilir.
 
-Teknik terimlerin bir kısmı İngilizce bırakılmıştır (*throughput*, *jitter*, *flow*,
-*grey-hole*). Sebebi, bu terimlerin Türkçe karşılıklarının alanda yerleşmemiş olması ve
-zorlama çevirilerin anlamı belirsizleştirmesidir. Her biri ilk geçtiği yerde tanımlanır;
-tamamı **Ek A — Terimler Sözlüğü**'nde toplanmıştır.
+**Terimler.** Bu alanın terimlerinin çoğunun yerleşmiş bir Türkçe karşılığı yoktur ve
+zorlama çeviriler anlamı açmak yerine kapatır — "konfigürasyon-grupli bölme" gibi bir ifade,
+konuyu bilmeyen bir okura hiçbir şey söylemez, bilen okuru ise İngilizce aslını tahmin etmeye
+zorlar. Bu nedenle şu kural izlenmiştir:
+
+- Yerleşik bir Türkçe karşılığı olan terimler Türkçe kullanılır, **ilk geçtikleri yerde
+  İngilizce aslı parantez içinde** verilir: teslim oranı (*delivery ratio*), tıkanıklık
+  (*congestion*), yol kaybı (*path loss*).
+- Karşılığı yerleşmemiş ya da çevirisi anlamı bozan terimler **İngilizce bırakılır** ve ilk
+  geçtikleri yerde bir cümleyle tanımlanır: *throughput*, *jitter*, *flow*, *grey-hole*,
+  *grouped split*, *domain shift*.
+- Kod ve veri adları (`delivery_ratio`, `n_flows`) hiçbir zaman çevrilmez; bunlar birer
+  değişken adıdır, terim değil.
+
+Terimlerin tamamı **Ek A — Terimler Sözlüğü**'nde bir arada tanımlanmıştır.
 
 Raporda geçen her sayısal sonuç tek bir kaynaktan üretilmiştir (`my-work/report_numbers.py`
 → `report_numbers.json`) ve elle kopyalanmamıştır. Bunun neden bir ayrıntı değil bir yöntem
@@ -114,10 +127,10 @@ Dördü de üretilmiştir. Kısaca:
   kalibre edilmiştir (§3).
 - **Veri seti.** 285 koşu, 5 sınıf, koşu başına 13 model girdisi. Sınıf dağılımı:
   `greyhole` 110, `dos` 100, `normal` 40, `ddos` 25, `blackhole` 10 (§4).
-- **Detektör.** Tek bir çok-sınıflı Random Forest. Dürüst, konfigürasyon-grupli çapraz
-  doğrulama altında makro-F1 **0.788 ± 0.094**; ikili görünümde saldırı-F1 **0.960**, yanlış
-  alarm oranı **0.150**. Sınıf bazında: `greyhole` 0.958, `blackhole` 0.952, `normal` 0.800,
-  `dos` 0.676, `ddos` 0.600 (§5, §6).
+- **Detektör.** Tek bir çok-sınıflı Random Forest. Dürüst değerlendirme (*grouped
+  cross-validation*, §5.2) altında makro-F1 **0.788 ± 0.094**; ikili görünümde saldırı-F1
+  **0.960**, yanlış alarm oranı **0.150**. Sınıf bazında: `greyhole` 0.958, `blackhole` 0.952,
+  `normal` 0.800, `dos` 0.676, `ddos` 0.600 (§5, §6).
 - **Yeni saldırı.** Ağ yoluna gerçekten yerleşen, paketleri `p` olasılığıyla düşüren bir
   **grey-hole** relay'i gerçeklenmiştir. `p` doğal bir şiddet ekseni verir ve tespit–şiddet
   eğrisi bunun üzerine kurulmuştur. İkinci bir saldırı — paketleri düşürmeyip **geciktiren**
@@ -260,7 +273,7 @@ arasında kayar ve karşılaştırma anlamsızlaşırdı.
    eğitim verisinin değer aralığının **tümüyle dışında** kalmaktadır: `max_flow_throughput_mbps`,
    `max_flow_txpackets`, `flow_concentration`, `monitor_owd_ms`, `monitor_pdv_ms`,
    `victim_startup_lag_ms`. İki özellik daha kısmen dışarıdadır (`mean_owd_ms` %85,
-   `mean_pdv_ms` %50). Karar ağacı toplulukları eğitim aralığının dışına **ekstrapolasyon
+   `mean_pdv_ms` %50). Karar ağacı toplulukları (*tree ensembles*) eğitim aralığının dışına **ekstrapolasyon
    yapamaz** — gördükleri son sınır değerine sabitlenirler — dolayısıyla bu girdilerin
    taşıdığı bilgi model için kullanılamaz durumdadır.
 3. **Saldırı sinyali normal varyansın içinde.** Kaynağın verisinde saldırı koşularıyla normal
@@ -271,7 +284,7 @@ Bu üç bulgu birlikte, kaynağın verisinin bir **doğruluk kıyaslaması** ola
 göstermektedir. Bu çalışmada eğitilen detektör, o veri üzerinde `normal` etiketli koşular dahil
 her şeyi tek bir sınıfa atamaktadır — ki bu, detektörün başarısızlığından çok, iki veri
 kümesinin aynı ölçüm evreninde bulunmadığının göstergesidir. Dolayısıyla bu test seti raporda
-bir **alan kayması probu** olarak sunulmakta, bir başarım ölçütü olarak sunulmamaktadır (§8.3).
+bir **alan kayması** (*domain shift*) **probu** olarak sunulmakta, bir başarım ölçütü olarak sunulmamaktadır (§8.3).
 
 Aynı zamanda §2.2'nin sonucunu bağımsız olarak desteklemektedir: `dos`, `ddos` ve `blackhole`
 koşularının birebir aynı dosyalar olması, o üç senaryonun ağ üzerinde birbirinden farklı
@@ -287,7 +300,7 @@ hiçbir etki üretmediğinin ikinci bir kanıtıdır.
 > oranı **tam olarak 1.0** çıkıyordu. Sıfır varyanslı bir taban, her saldırıyı önemsiz biçimde
 > ayrılabilir kılar ve tespit–şiddet eğrisini düzleştirir — yani ölçüm aracını işe yaramaz
 > hale getirir. Bu bölümün büyük kısmı, tabana **ölçülebilir ve gerekçelendirilmiş** bir
-> gürültü tabanının nasıl kazandırıldığını anlatır.
+> gürültü tabanının (*noise floor*) nasıl kazandırıldığını anlatır.
 
 ### 3.1 Topoloji
 
@@ -300,7 +313,7 @@ Simüle edilen ağ, bir hastane servisindeki kablosuz segmenti temsil eder:
 - **1 giyilebilir sensör düğümü** (Hexoskin tipi göğüs bandı). Bluetooth bağlantısı, düğümü
   bir istasyona bağlayan noktadan-noktaya bir bağlantıyla temsil edilir: 3 Mbps, 2 ms gecikme.
 
-Wi-Fi yapılandırması **802.11n**, hız uyarlaması **MinstrelHt**, SSID `HealthNet_24G`, adres
+Wi-Fi yapılandırması **802.11n**, hız uyarlama algoritması (*rate adaptation*) **MinstrelHt**, SSID `HealthNet_24G`, adres
 bloğu `192.168.1.0/24`. İstasyonlar 10 m aralıklı bir ızgaraya yerleştirilir (satır başına 5
 düğüm), yani ağın toplam açıklığı yaklaşık 56 metredir — tek bir servis katının ölçeği.
 Konumlar sabit değildir: her koşuda her düğüm ±2 m rastgele kaydırılır (§3.3).
@@ -325,7 +338,7 @@ kullanmak, teslim ekseninin çözünürlüğünü düşürürdü.
 (8 kbps), tansiyon manşonu (2 kbps), infüzyon pompası (16 kbps) — ve bunlardan farklı olarak
 bir **görüntüleme/video geçidi** (1200 baytlık paketler, yüksek hız). Hafif cihazların hepsi
 gerçek klinik profillere göre ayarlanmıştır: düşük bit hızı, küçük paketler. Bu cihazların
-görevi kendi başlarına özellik taşımak değil, akış sayısını ve ortam çekişmesini değiştirmektir.
+görevi kendi başlarına özellik taşımak değil, akış sayısını ve ortam çekişmesini (*medium contention*) değiştirmektir.
 Görüntüleme geçidi ise §3.3'te açıklanacağı üzere ayrı ve merkezi bir role sahiptir.
 
 Arka plan cihazlarının portları, veri çıkarma aşamasının rol tanıdığı portlardan (8080 kurban,
@@ -349,7 +362,8 @@ bozulmaya başlıyor" sorusu — ki çalışmanın manşet çıktısı budur —
 Bu nedenle tabana dört katman halinde, tohumla sürülen ve tekrar üretilebilir bir rastgelelik
 eklenmiştir:
 
-1. **Kanal sönümlemesi.** Mevcut mesafeye bağlı yol kaybının üzerine Nakagami hızlı sönümlemesi.
+1. **Kanal sönümlemesi.** Mevcut mesafeye bağlı yol kaybının (*path loss*) üzerine Nakagami hızlı sönümlemesi
+   (*fast fading*).
 2. **Konum kaymaları.** Her düğüm, her koşuda ±2 m rastgele kaydırılır. Bu yalnızca kanalı
    değiştirmez; farklı `--run` değerlerini birbirinin neredeyse kopyası olmaktan çıkarıp
    gerçekten bağımsız tekrarlara dönüştürür.
@@ -357,8 +371,9 @@ eklenmiştir:
    seçilen bir paket hata oranı verilir.
 4. **Trafiğin kendisinin rastgeleleştirilmesi.** Meşru akışların veri hızı ve paket boyu
    tabanlarının ±%20'si içinde rastgele seçilir; sabit 1 s açık / 1 s kapalı deseni yerine
-   rastgele süreli patlamalar konur. Bu, görev döngüsünü koşudan koşuya yaklaşık 0.33 ile
-   0.88 arasında salındırır (ortalama ≈ 0.63), yani **teklif edilen yük** hiçbir parametre
+   rastgele süreli patlamalar konur. Bu, görev döngüsünü (*duty cycle*) koşudan koşuya yaklaşık 0.33 ile
+   0.88 arasında salındırır (ortalama ≈ 0.63), yani **teklif edilen yük** (*offered load*)
+   hiçbir parametre
    değişmese bile koşular arasında farklılaşır.
 
 #### Beklenmeyen bulgu: bağlantı hatası teslim oranını hareket ettirmiyor
@@ -380,7 +395,7 @@ hatasıyla üretilemez.**
 
 ARQ, havaya çıkmış ve bozulmuş bir çerçeveyi yeniden gönderebilir. **Havaya hiç çıkamamış bir
 paketi yeniden gönderemez.** Dolu bir MAC kuyruğundan atılan paket için yeniden gönderilecek
-bir şey yoktur. Dolayısıyla teslim ekseninin tek fiziksel kaynağı **tıkanıklık kaybıdır**.
+bir şey yoktur. Dolayısıyla teslim ekseninin tek fiziksel kaynağı **tıkanıklık kaybıdır** (*congestion loss*).
 
 Bunu üretebilmek için iki müdahale yapılmıştır:
 
@@ -405,7 +420,7 @@ Doyum dizinin etrafındaki tepki eğrisi şöyledir:
 | 30 Mbps | %74.1 | 11.88 Mbps |
 | 40 Mbps | %62.7 | 12.93 Mbps |
 
-Sağdaki sütun doyumu doğrudan gösterir: teklif edilen yük 20 Mbps'i geçtikten sonra ölçülen
+Sağdaki sütun doyumu (*saturation*) doğrudan gösterir: teklif edilen yük 20 Mbps'i geçtikten sonra ölçülen
 throughput artmayı bırakır ve ~12.8 Mbps civarında sabitlenir. Fazladan teklif edilen her bit
 artık taşınmaz, **kaybedilir** — teslim oranının düşmeye başladığı nokta tam olarak burasıdır.
 
@@ -422,7 +437,7 @@ tek bir değere çakılmak yerine yayılır.
   kaydırırdı.
 - **Görüntüleme geçidi ise her koşuda açıktır**, rastgele alt kümeye dahil edilmemiştir. Dahil
   edilseydi tıkanıklık koşu başına yazı-tura haline gelir ve teslim oranı bir gürültü tabanı
-  değil **iki tepeli** bir dağılım verirdi (tıkanmamış koşular / tıkanmış koşular). Bunun
+  değil **iki tepeli** (*bimodal*) bir dağılım verirdi (tıkanmamış koşular / tıkanmış koşular). Bunun
   yerine sabit kalan geçidin **hızı** koşudan koşuya değişir — yani "servis bu koşuda ne kadar
   yoğun" sorusu rastgeleleşir, "servis yoğun mu değil mi" sorusu değil.
 
@@ -430,7 +445,7 @@ tek bir değere çakılmak yerine yayılır.
 
 Kalibrasyon sonrası, 40 saldırısız koşuda ölçülen değerler:
 
-| büyüklük | ortalama | std | aralık | değişim katsayısı |
+| büyüklük | ortalama | std | aralık | değişim katsayısı (*CV*) |
 |---|---|---|---|---|
 | `delivery_ratio` | 0.9695 | 0.0321 | 0.896 – 1.000 | %3.3 |
 | `total_throughput_mbps` | 12.118 | 1.149 | 9.79 – 14.30 | %9.5 |
@@ -466,7 +481,7 @@ bağımsızdır, ve aynı `--run` değeri her zaman **birebir aynı** koşuyu ye
 
 Senaryolar tek tek elle koşulmaz; bir tarama betiği (`run_sweep.py`) simülasyonu bir kez
 derler ve bütün senaryo × şiddet × tohum kombinasyonlarını sırayla çalıştırarak ham çıktıları
-ve bir künye dosyası üretir.
+ve bir künye dosyası (*manifest*) üretir.
 
 ### 3.5 Ölçüm
 
@@ -521,7 +536,59 @@ dönüştürüldüğünü anlatır.
 
 ## Ek A — Terimler Sözlüğü
 
-> *(Yazılacak.)*
+Terimler ilk geçtikleri bölümde de tanımlanmıştır; burada bir arada toplanmışlardır.
+*(Bu liste rapor ilerledikçe genişletilmektedir; §4 sonrası terimler eklenecektir.)*
+
+**Ağ ve simülasyon**
+
+| terim | karşılığı / anlamı |
+|---|---|
+| **flow** (akış) | Bir (kaynak IP, hedef IP, protokol, kaynak port, hedef port) beşlisiyle tanımlanan tek yönlü paket dizisi. FlowMonitor ölçümü akış başına tutar. |
+| **throughput** | Birim zamanda başarıyla taşınan veri miktarı; bu raporda Mbps. "Teklif edilen yük"ten farkı, yalnızca **ulaşanı** sayması. |
+| **offered load** (teklif edilen yük) | Kaynağın göndermeye *çalıştığı* yük. Ağ doyduğunda bunun bir kısmı throughput'a dönüşmez, kaybolur. |
+| **saturation** (doyum) | Teklif edilen yük artırıldığı hâlde throughput'un artmayı bıraktığı nokta. Bu ağda ≈12.8 Mbps. |
+| **congestion** (tıkanıklık) | Ortama sığmayan trafiğin kuyruklarda birikmesi ve taşması. Kaybın ARQ ile gizlenemeyen tek kaynağı. |
+| **medium contention** (ortam çekişmesi) | Aynı kablosuz ortamı paylaşan cihazların iletim sırası için yarışması. |
+| **OWD** (*one-way delay*) | Tek yönlü gecikme: paketin kaynaktan hedefe varış süresi. |
+| **PDV / jitter** | Gecikmenin paketten pakete değişkenliği. Ortalama gecikme aynı kalırken jitter büyüyebilir; klinik telemetride bozucu olan çoğu zaman budur. |
+| **delivery ratio** (teslim oranı) | Gönderilen pakete karşılık ulaşan paket oranı. Bu raporda kurban yolu için hesaplanır. |
+| **path loss** (yol kaybı) | Sinyalin mesafeyle zayıflaması. |
+| **fast fading** (hızlı sönümleme) | Sinyal gücünün kısa zaman ölçeğinde dalgalanması; burada Nakagami modeliyle. |
+| **rate adaptation** (hız uyarlama) | Vericinin sinyal kalitesine göre modülasyon hızını değiştirmesi. Zayıf sinyale paket düşürerek değil **yavaşlayarak** yanıt verir — bu çalışmada teslim oranının neden kıpırdamadığının bir sebebi. |
+| **ARQ** (*automatic repeat request*) | MAC katmanının bozulan çerçeveyi yeniden göndermesi (802.11'de ~7 deneme). Bağlantı hatasını uçtan uca teslimden gizler. |
+| **duty cycle** (görev döngüsü) | Bir kaynağın zamanının ne kadarında fiilen gönderim yaptığı. |
+| **noise floor** (gürültü tabanı) | Saldırı yokken bile var olan doğal ölçüm değişkenliği. Sıfır olması bir avantaj değil, ölçümü anlamsızlaştıran bir kusurdur (§3.3). |
+| **bimodal** (iki tepeli) | Tek bir ortalama etrafında değil, iki ayrı yoğunlaşma etrafında toplanan dağılım. |
+| **FlowMonitor** | NS-3'ün akış başına paket, bayt, kayıp, gecikme ve jitter biriktiren ölçüm modülü. |
+| **seed / run** (tohum) | Rastgele sayı üretecinin başlangıç durumu. Aynı tohum aynı koşuyu birebir yeniden üretir; farklı tohumlar bağımsız tekrarlardır. |
+| **manifest** (künye) | Hangi koşunun hangi ayarlarla ve hangi tohumla üretildiğini kaydeden dosya. |
+
+**Saldırılar**
+
+| terim | anlamı |
+|---|---|
+| **DoS** (*denial of service*) | Tek bir kaynaktan aşırı trafik göndererek ağı ya da hedefi hizmet veremez hâle getirme. |
+| **DDoS** (*distributed DoS*) | Aynı saldırının birden çok kaynaktan eşzamanlı yapılması. |
+| **MITM** (*man in the middle*) | Saldırganın iki taraf arasındaki yola yerleşip trafiği görmesi, değiştirmesi ya da geciktirmesi. |
+| **blackhole** | Yola yerleşen düğümün kendisine gelen **bütün** paketleri düşürmesi. Gürültülü ve kolay fark edilir. |
+| **grey-hole** (seçici iletmeme) | Aynı düğümün paketlerin yalnızca bir kısmını düşürüp gerisini iletmesi. Ağ çalışıyor görünmeye devam ettiği için sessizdir; bu çalışmanın eklediği saldırı. |
+| **relay** (aracı) | Trafiği alıp yeniden gönderen ara düğüm. Bu raporda kritik bir ayrım: aracının **varlığı** ile aracının **kötü niyeti** ayrı şeylerdir (§8.1). |
+
+**Makine öğrenmesi**
+
+| terim | anlamı |
+|---|---|
+| **feature** (öznitelik) | Modele girdi olan ölçülmüş sayı. Bu çalışmada koşu başına 13 tane. |
+| **Random Forest** | Çok sayıda karar ağacının oyunu birleştiren sınıflandırıcı. |
+| **tree ensembles** (karar ağacı toplulukları) | Random Forest'ın da dahil olduğu aile. Eğitimde görülen değer aralığının **dışına ekstrapolasyon yapamaz**; sınır değerine sabitlenir. |
+| **cross-validation** (çapraz doğrulama) | Veriyi katlara bölüp her katı sırayla test olarak kullanma; tek bir bölmenin şansına bağlı kalmamayı sağlar. |
+| **grouped split** | Birbirine bağlı koşuların bölmenin **aynı tarafında** tutulması. Burada aynı saldırı ayarının bütün tohumları tek tarafta kalır, böylece model test edilirken hiç görmediği bir şiddetle karşılaşır (§5.2). |
+| **precision / recall / F1** | Sırasıyla: alarm verdiklerinin ne kadarı gerçekten saldırıydı; gerçek saldırıların ne kadarını yakaladı; ikisinin harmonik ortalaması. |
+| **macro-F1** | Sınıfların F1 skorlarının, sınıf büyüklüğüne bakılmaksızın eşit ağırlıkla ortalaması. Küçük sınıfların gizlenmesini önler. |
+| **confusion matrix** (karışıklık matrisi) | Hangi gerçek sınıfın hangi sınıf olarak tahmin edildiğini gösteren tablo. |
+| **domain shift** (alan kayması) | Test verisinin, eğitim verisinden sistematik olarak farklı bir dağılımdan gelmesi. Modelin başarısızlığı ile verinin uyumsuzluğu ayrı şeylerdir (§2.4). |
+| **probe** (prob) | Ölçülen ama **eğitilmeyen** konfigürasyon. Modelin daha önce hiç görmediği bir duruma nasıl tepki verdiğini sınamak için kullanılır (§4). |
+| **CV** (*coefficient of variation*, değişim katsayısı) | Standart sapmanın ortalamaya oranı; farklı birimlerdeki büyüklüklerin değişkenliğini karşılaştırmayı sağlar. |
 
 ## Kaynakça
 
