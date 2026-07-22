@@ -56,6 +56,41 @@ Two things to keep honest:
   flow-level features -- their blindness is a property of the abstraction and stands as
   a finding. It is a second, lower-level measurement placed alongside them.
 
+## The low-delay excess, isolated
+
+A first look at three seeds showed the median at `d = 1` sitting 6-8 ms above the same
+seed's `d = 0`, where the injected hold is 1 ms. Three candidates were tested and two
+were eliminated outright:
+
+* **Rng stream divergence — no.** The offered load is bit-identical across the sweep:
+  the victim source sends 1573 packets and the heavy background flow 21554 at every
+  value of `d`. Only what is *delivered* changes.
+* **A code path discontinuity between immediate and deferred sending — no.** `d = 0`
+  already goes through `Simulator::Schedule`, and `d = 0.001` reproduces `d = 0` to the
+  last digit. There is no immediate-send branch to be discontinuous with.
+* **Chaotic sensitivity of a saturated medium — no, and this was the wrong reading.**
+  It came from three seeds. At ten, paired against each seed's own `d = 0`:
+
+| `d` | paired delta | std | injected | t | seeds to resolve at 2 SE |
+|---|---|---|---|---|---|
+| 1 | +3.20 | 2.40 | 1 | 4.22 | 24 |
+| 5 | +9.05 | 4.59 | 5 | 6.23 | 4 |
+| 20 | +25.25 | 3.19 | 20 | 25.03 | 1 |
+
+The effect is systematic, not chaotic. The earlier estimate that ~300 seeds would be
+needed at `d = 1` was wrong by more than an order of magnitude, and wrong for a specific
+reason worth recording: it divided by the *unpaired* spread across seeds (6.0 ms) rather
+than the paired spread (2.4 ms). Most of the across-seed variance is each seed's own
+baseline, and pairing removes it. Three seeds were also simply too few to see that.
+
+What remains after the elimination is a real overshoot: the delta exceeds the injected
+hold by roughly 2-3 ms at every `d`. It is not an artefact of summarising with a median
+-- the mean overshoots by the same amount (+2.27, +1.78, +2.84) -- so it is physical.
+The reading is that holding does two things: it adds its own duration, and it de-bunches
+the relay's transmissions, which changes how they contend with the heavy background
+flow. The second cost is roughly constant and does not scale with `d`, which is why it
+dominates at the low end and disappears into the signal by `d = 20`.
+
 ## What this cannot fix
 
 Binary detection will not gain a curve. The MITM uses the same relay whose mere presence
