@@ -39,3 +39,6 @@ IoMT-Simulasyon-Tabani-ve-Yeni-Veri-Seti-Raporu.docx
 # hand-edited and kept out of the repo. Keeping it tracked invites regenerating
 # over those edits.
 my-work/*/make_report.py
+
+# LibreOffice lock files, created while a csv is open in the GUI
+.~lock.*#
