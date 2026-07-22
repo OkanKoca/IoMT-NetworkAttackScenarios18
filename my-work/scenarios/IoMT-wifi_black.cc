@@ -29,6 +29,7 @@
 #include "ns3/point-to-point-module.h"
 #include "ns3/flow-monitor-module.h"
 
+#include "iomt-timing.h"      // end-to-end delay below the flow layer
 #include "iomt-noise.h"
 
 using namespace ns3;
@@ -169,7 +170,10 @@ main(int argc, char* argv[])
 
     // Real patient-monitor sink on STA 0.(receives nothing under attack).
     PacketSinkHelper monitorSink("ns3::UdpSocketFactory", monitorAddress);
+    EnableVictimTiming(monitorSink);
     ApplicationContainer monitorApp = monitorSink.Install(wifiNodes.Get(0));
+    E2eDelay e2e;
+    AttachTiming(monitorApp, e2e);
     monitorApp.Start(Seconds(1.0));
     monitorApp.Stop(Seconds(simulationTime));
 
@@ -177,7 +181,8 @@ main(int argc, char* argv[])
     OnOffHelper ecgTraffic("ns3::UdpSocketFactory", relayAddress);
     // Patient-monitor ECG waveform: the real clinical profile is a low bit rate
     // carried by many small packets (see IoMT-wifi_wip.cc for the full rationale).
-    SetNoisyOnOff(ecgTraffic, 128e3, 128); // per-run randomized rate/size/burst
+    SetNoisyOnOff(ecgTraffic, 128e3, 128, 0.2, TimingHeaderBytes()); // per-run randomized
+    EnableVictimTiming(ecgTraffic);
     ApplicationContainer ecgApp = ecgTraffic.Install(wifiNodes.Get(2));
     ecgApp.Start(Seconds(2.0));
     ecgApp.Stop(Seconds(20.0));
@@ -214,6 +219,7 @@ main(int argc, char* argv[])
 
     Simulator::Stop(Seconds(simulationTime));
     Simulator::Run();
+    ReportTiming(e2e);
     monitor->CheckForLostPackets();
     monitor->SerializeToXmlFile(output + ".xml", true, true);
 

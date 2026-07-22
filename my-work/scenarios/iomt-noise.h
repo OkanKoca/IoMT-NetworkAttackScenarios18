@@ -119,10 +119,18 @@ inline void SetNoisyOnOff(OnOffHelper& app, double baseRateBps, uint32_t basePkt
     const double lo = 1.0 - spread;
     const double width = 2.0 * spread;
     double rate = baseRateBps * (lo + width * u->GetValue());
-    app.SetAttribute("DataRate", DataRateValue(DataRate((uint64_t)rate)));
     uint32_t pkt = (uint32_t)std::clamp(basePkt * (lo + width * u->GetValue()), 64.0, 1472.0);
     NS_ABORT_MSG_IF(headerBytes >= pkt, "header would leave no payload");
+    // BOTH size and rate have to be corrected, and correcting only the size is worse
+    // than correcting neither. OnOffApplication's DataRate meters PAYLOAD bits and
+    // derives the gap between packets from it, so shrinking the payload alone makes it
+    // send MORE packets -- and once the header is added back the wire carries the
+    // original packet size at ~pkt/(pkt-headerBytes) times the intended rate. Measured
+    // at 128/108: the victim path offered 18% more load than the baseline it was to be
+    // compared against, enough to push a seed over the congestion cliff.
     app.SetAttribute("PacketSize", UintegerValue(pkt - headerBytes));
+    app.SetAttribute("DataRate",
+                     DataRateValue(DataRate((uint64_t)(rate * (pkt - headerBytes) / pkt))));
     app.SetAttribute("OnTime", StringValue("ns3::UniformRandomVariable[Min=0.5|Max=1.5]"));
     app.SetAttribute("OffTime", StringValue("ns3::UniformRandomVariable[Min=0.2|Max=1.0]"));
 }

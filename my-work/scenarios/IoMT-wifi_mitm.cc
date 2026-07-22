@@ -57,7 +57,7 @@
 #include "ns3/mobility-module.h"      // node positions / mobility models
 #include "ns3/point-to-point-module.h"// wired P2P link (Hexoskin BLE emulation)
 #include "ns3/flow-monitor-module.h"  // per-flow statistics collection
-#include "ns3/seq-ts-size-header.h"   // source send stamp that survives the relay
+#include "iomt-timing.h"              // E2eDelay + the victim-path stamp helpers
 
 #include "iomt-noise.h"               // shared per-run stochasticity helpers
 
@@ -77,47 +77,6 @@ NS_LOG_COMPONENT_DEFINE("IoMTTimingMitm");
 // sockets, same node. The only difference is what happens to a received packet --
 // dropped with probability p there, held for a while here.
 // ---------------------------------------------------------------------------
-// --- True end-to-end delay ---------------------------------------------------
-// The measurement FlowMonitor structurally cannot make. Its transit is per FLOW,
-// and the relay ends one flow and begins another, so the hold falls between the
-// two and every flow's own transit stays unchanged. Jitter is blind for the same
-// reason: with D(i,j) = (Rj-Ri) - (Sj-Si), a hold that shifts sends and receives
-// together is exactly zero.
-//
-// The source's stamp, carried across the relay rather than discarded, closes that
-// gap -- and closes it by stepping OUTSIDE the flow abstraction, not by repairing
-// anything inside it. One sample per delivered packet, against the one sample per
-// RUN that victim_startup_lag_ms provides.
-class E2eDelay
-{
-  public:
-    // Trace signature of PacketSink::RxWithSeqTsSize.
-    void Rx(Ptr<const Packet>, const Address&, const Address&, const SeqTsSizeHeader& h)
-    {
-        m_ms.push_back((Simulator::Now() - h.GetTs()).GetSeconds() * 1000.0);
-    }
-    size_t Count() const { return m_ms.size(); }
-    double Mean() const
-    {
-        return m_ms.empty() ? 0.0
-                            : std::accumulate(m_ms.begin(), m_ms.end(), 0.0) / m_ms.size();
-    }
-    // Quantile by nearest rank on a sorted copy: the sample is small enough that
-    // sorting per call costs nothing, and mutating the record to read it would be
-    // a poor trade.
-    double Quantile(double q) const
-    {
-        if (m_ms.empty()) return 0.0;
-        std::vector<double> s(m_ms);
-        std::sort(s.begin(), s.end());
-        size_t i = (size_t)(q * (s.size() - 1));
-        return s[i];
-    }
-
-  private:
-    std::vector<double> m_ms;
-};
-
 class TimingMitmRelay : public Application
 {
   public:
@@ -415,11 +374,10 @@ main(int argc, char* argv[])
     // their own ports and their own sinks (see iomt-noise.h). A sink told to expect the
     // header on a port where untagged traffic also arrives would misparse it as payload.
     PacketSinkHelper monitorSink("ns3::UdpSocketFactory", monitorAddress);
-    monitorSink.SetAttribute("EnableSeqTsSizeHeader", BooleanValue(true));
+    EnableVictimTiming(monitorSink);
     ApplicationContainer monitorApp = monitorSink.Install(wifiNodes.Get(0));
     E2eDelay e2e;
-    monitorApp.Get(0)->TraceConnectWithoutContext("RxWithSeqTsSize",
-                                                 MakeCallback(&E2eDelay::Rx, &e2e));
+    AttachTiming(monitorApp, e2e);
     monitorApp.Start(Seconds(1.0));
     monitorApp.Stop(Seconds(simulationTime));
 
@@ -431,9 +389,8 @@ main(int argc, char* argv[])
     // resolved, so this victim path stays deliberately packet-rich.
     // The header is subtracted from the payload so the on-wire packet stays the size
     // the baseline was calibrated at; see SetNoisyOnOff.
-    const uint32_t kTsHeaderBytes = SeqTsSizeHeader().GetSerializedSize();
-    SetNoisyOnOff(ecgTraffic, 128e3, 128, 0.2, kTsHeaderBytes); // per-run randomized
-    ecgTraffic.SetAttribute("EnableSeqTsSizeHeader", BooleanValue(true));
+    SetNoisyOnOff(ecgTraffic, 128e3, 128, 0.2, TimingHeaderBytes()); // per-run randomized
+    EnableVictimTiming(ecgTraffic);
     ApplicationContainer ecgApp = ecgTraffic.Install(wifiNodes.Get(2));
     ecgApp.Start(Seconds(2.0)); // starts AFTER the relay is listening (1.0s)
     ecgApp.Stop(Seconds(20.0));
@@ -485,13 +442,7 @@ main(int argc, char* argv[])
               << " (delay=" << delayMs << "ms, realized mean hold="
               << relay->GetMeanHoldMs() << "ms)" << std::endl;
 
-    // The number this experiment exists to produce. Compare it against the relay's
-    // realized mean hold above: the difference is the path's own transit, and the
-    // TREND across the delay sweep is the intensity axis the flow features lack.
-    std::cout << "End-to-end delay (source stamp -> monitor): n=" << e2e.Count()
-              << " mean=" << e2e.Mean() << "ms"
-              << " median=" << e2e.Quantile(0.50) << "ms"
-              << " p95=" << e2e.Quantile(0.95) << "ms" << std::endl;
+    ReportTiming(e2e);
 
     // GetFlowStats() -> map<FlowId, FlowStats>; iterate for a quick per-flow view.
     std::map<FlowId, FlowMonitor::FlowStats> stats = monitor->GetFlowStats();

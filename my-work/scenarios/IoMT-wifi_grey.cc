@@ -35,6 +35,7 @@
 #include "ns3/point-to-point-module.h"// wired P2P link (Hexoskin BLE emulation)
 #include "ns3/flow-monitor-module.h"  // per-flow statistics collection
 
+#include "iomt-timing.h"      // end-to-end delay below the flow layer
 #include "iomt-noise.h"               // shared per-run stochasticity helpers
 
 #include <iostream>                   // std::cerr for the co-location warning below
@@ -154,7 +155,13 @@ GreyholeRelay::HandleRead(Ptr<Socket> socket)
         // (throughput, OWD, PDV, loss all depend on size/timing, not content).
         // Payload is NOT preserved, so any future payload-based feature would
         // silently break here and must copy the original bytes instead.
+        // Carry the source's stamp across the hop. Building a fresh packet
+        // without it is what makes an on-path relay's own cost invisible to
+        // every timing feature -- see iomt-timing.h.
+        SeqTsSizeHeader tsHeader;
+        packet->RemoveHeader(tsHeader);
         Ptr<Packet> fresh = Create<Packet>(packet->GetSize());
+        fresh->AddHeader(tsHeader);
         // Send(packet) -> bytes sent (>=0), or -1 on error. Goes to the peer
         // fixed by Connect() above (the monitor).
         m_txSocket->Send(fresh);
@@ -314,7 +321,10 @@ main(int argc, char* argv[])
     // Real patient-monitor sink on STA 0.
     // PacketSinkHelper installs a server that just absorbs incoming packets.
     PacketSinkHelper monitorSink("ns3::UdpSocketFactory", monitorAddress);
+    EnableVictimTiming(monitorSink);
     ApplicationContainer monitorApp = monitorSink.Install(wifiNodes.Get(0)); // -> ApplicationContainer
+    E2eDelay e2e;
+    AttachTiming(monitorApp, e2e);
     monitorApp.Start(Seconds(1.0)); // Seconds(x) -> Time value; schedules app start
     monitorApp.Stop(Seconds(simulationTime));
 
@@ -325,7 +335,8 @@ main(int argc, char* argv[])
     // carried by many small packets (see IoMT-wifi_wip.cc for the full rationale).
     // Packet COUNT is what sets how finely the drop probability p can be resolved,
     // so this victim path stays deliberately packet-rich.
-    SetNoisyOnOff(ecgTraffic, 128e3, 128); // per-run randomized rate/size/burst
+    SetNoisyOnOff(ecgTraffic, 128e3, 128, 0.2, TimingHeaderBytes()); // per-run randomized
+    EnableVictimTiming(ecgTraffic);
     ApplicationContainer ecgApp = ecgTraffic.Install(wifiNodes.Get(2));
     ecgApp.Start(Seconds(2.0)); // starts AFTER the relay is listening (1.0s)
     ecgApp.Stop(Seconds(20.0));
@@ -366,6 +377,7 @@ main(int argc, char* argv[])
     // Event-loop control: stop time, run until then, then tear down.
     Simulator::Stop(Seconds(simulationTime));
     Simulator::Run();                       // processes the event queue
+    ReportTiming(e2e);
     monitor->CheckForLostPackets();         // finalizes lost-packet accounting
     // Serialize all flow stats to XML (path relative to the working dir).
     monitor->SerializeToXmlFile(output + ".xml", true, true);
