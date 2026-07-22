@@ -495,14 +495,314 @@ dönüştürüldüğünü anlatır.
 
 ## 4. Veri seti
 
-> *(Yazılacak: "koşu" neden örneklem birimi seçildi; üç ölçüm modalitesi — hacim, teslim,
-> zamanlama; 13 özelliğin tanımı ve hangi ham FlowMonitor büyüklüğünden türediği; şiddet
-> eksenleri; eğitim sınıfı ile değerlendirme probu ayrımı ve kuralı.)*
+> Bu bölüm, ham FlowMonitor çıktısının nasıl bir eğitim verisine dönüştüğünü anlatır. İki
+> karar bölümün omurgasını oluşturur: **örneklem biriminin ne olduğu** (akış değil, koşu) ve
+> **hangi konfigürasyonların eğitilip hangilerinin yalnızca ölçüldüğü**. İkisi de sonuçların
+> yorumunu doğrudan belirler, bu yüzden gerekçeleriyle birlikte verilmektedir.
+
+### 4.1 Örneklem birimi: neden koşu, neden akış değil
+
+Bu tür veri setlerinin alışılmış biçimi **akış başına bir satırdır**: her flow bir eğitim
+örneği olur ve modelin görevi akışı normal ya da kötücül diye sınıflandırmaktır. Bu çalışma
+farklı bir birim seçmiştir — **her satır bir simülasyon koşusudur** ve o koşudaki bütün
+akışların özetini taşır. Karar bilinçlidir ve iki gerekçeye dayanır.
+
+**Birincisi, ölçülmek istenen şey bir akışın değil ağın özelliğidir.** "Bu ağda şu anda bir
+saldırı var mı" sorusu, tek bir akışa bakılarak yanıtlanamaz. DDoS'un tanımı zaten *birden çok
+akışın birlikte* davranmasıdır; grey-hole'ün etkisi kurban yolunun iki bacağı arasındaki
+**farkta** görünür; bir flood'un varlığı, kurban akışının kendisinde değil onun yanındaki
+akışta okunur. Akış başına satır, bu ilişkileri modelin göremeyeceği biçimde parçalar.
+Nitekim bu çalışmanın en bilgilendirici özniteliklerinden ikisi — akış sayısı ve akış
+yoğunlaşması — akış seviyesinde **tanımsızdır**; ancak koşu seviyesinde vardır.
+
+**İkincisi, akış seviyesi bölme kuralını ihlal etmeyi kolaylaştırır.** Değerlendirmenin temel
+kuralı, aynı koşudan gelen verilerin eğitim ve test kümesine dağılmamasıdır; dağılırsa model
+test edilirken aslında ezberlediği koşuyu yeniden tanır ve skor gerçek olmaktan çıkar. Akış
+başına satır kullanıldığında bu kural ayrıca uygulanmak zorundadır ve unutulması kolaydır.
+Koşu başına satır kullanıldığında ihlal etmek **yapısal olarak imkânsızdır**: bir koşunun tek
+bir satırı vardır, dolayısıyla bölmenin yalnızca bir tarafında olabilir.
+
+Ödenen bedel de açıktır: veri seti küçülür (285 satır), ve model "hangi akış kötücül" sorusunu
+yanıtlayamaz — yalnızca "bu ağda saldırı var mı ve hangisi" sorusunu yanıtlar. İkinci soru bu
+çalışmanın sorusudur; birincisi, bir sonraki adım olarak §11'de tartışılmaktadır.
+
+### 4.2 Ham ölçümden özniteliğe
+
+FlowMonitor her akış için şu ham büyüklükleri biriktirir: gönderilen ve alınan paket ve bayt
+sayısı, kaybolan paket sayısı, toplam gecikme, toplam jitter, ve ilk/son paketin gönderim ve
+alım zaman damgaları. Bunlar akış başınadır; bir koşuda 3 ile 15 arasında akış bulunur.
+
+Akışlar, hedef portlarına göre bir **role** atanır. Bu, hangi ölçümün kurban yolunu anlattığını
+bilmek için gereklidir:
+
+| port | rol | ne taşır |
+|---|---|---|
+| 8080 | `monitor` | kurban yolu: EKG akışının hasta başı monitöre varışı |
+| 7070 | `relay_in` | kurban trafiğinin aracıya girişi (yalnız grey-hole/blackhole/MITM'de) |
+| 9090 | `telemetry` | ikincil meşru akış |
+| 9 | flood | saldırı trafiği |
+| diğer | `other` | servisin arka plan cihazları |
+
+Koşudaki bütün akışlar, bu roller kullanılarak **tek bir öznitelik vektörüne** indirgenir.
+
+### 4.3 Üç ölçüm modalitesi
+
+Öznitelikler rastgele seçilmemiş, ağın bozulabileceği **üç bağımsız eksene** göre
+tasarlanmıştır. Bu ayrım raporun ilerleyen bölümlerinde defalarca kullanılacaktır:
+
+- **Hacim ve yapı** — ne kadar veri geçti, kaç akış vardı, yük nasıl dağıldı. Flood
+  saldırılarının (dos, ddos) izini bırakacağı eksen.
+- **Teslim** — gönderilenin ne kadarı ulaştı. Paket düşüren saldırıların (grey-hole,
+  blackhole) ekseni.
+- **Zamanlama** — ulaşan ne kadar geç ve ne kadar düzensiz ulaştı. Paketleri düşürmeyip
+  geciktiren saldırıların ekseni.
+
+Modelin gördüğü 13 girdi bu üç eksene dağılmıştır:
+
+| öznitelik | modalite | nasıl hesaplanır |
+|---|---|---|
+| `n_flows` | yapı | koşudaki akış sayısı |
+| `flow_concentration` | yapı | en büyük akışın gönderdiği paketin, toplam gönderilen pakete oranı |
+| `total_throughput_mbps` | hacim | akış başına throughput'ların toplamı |
+| `max_flow_throughput_mbps` | hacim | en yüksek tek akış throughput'u |
+| `max_flow_txpackets` | hacim | en çok paket gönderen akışın paket sayısı |
+| `delivery_ratio` | teslim | kurban yolunun uçtan uca teslim oranı (§4.4) |
+| `overall_loss_ratio` | teslim | koşudaki toplam kayıp / toplam gönderim |
+| `monitor_owd_ms` | zamanlama | kurban yolunun uçtan uca tek yön gecikmesi |
+| `monitor_pdv_ms` | zamanlama | kurban yolunun uçtan uca jitter'ı |
+| `victim_startup_lag_ms` | zamanlama | kaynağın ilk gönderiminden monitörün ilk alımına geçen süre (§4.4) |
+| `mean_owd_ms` | zamanlama | koşudaki etkin akışların ortalama gecikmesi |
+| `mean_pdv_ms` | zamanlama | koşudaki etkin akışların ortalama jitter'ı |
+| `monitor_missing` | (gösterge) | kurban yolu zamanlaması ölçülemediğinde 1, aksi hâlde 0 |
+
+`intensity`, `run`, `scenario` ve `run_id` sütunları veri setinde bulunur ama **modele girdi
+değildir**. `intensity` özellikle dışarıda tutulmuştur: birimi saldırıya göre değişir
+(grey-hole'de 0–1 arası olasılık, DoS'ta 10–1000 paket/s, DDoS'ta 1–8 saldırgan), dolayısıyla
+ortak bir sayı ekseni yoktur. Sadece koşuları gruplamak ve tespit–şiddet eğrisini çizmek için
+tutulur.
+
+### 4.4 Kurban yolunu ölçmenin iki tuzağı
+
+İki öznitelik, ilk bakışta görünmeyen ama sonuçları tersine çevirebilecek tasarım sorunları
+içermektedir. İkisi de raporun ilerideki bulgularını doğrudan etkilediği için burada
+açıklanmaktadır.
+
+**Aracı, kurban yolunu iki akışa böler.** Altyapı modundaki bir Wi-Fi ağında bir istasyon
+başka bir istasyona doğrudan ulaşamaz; trafik erişim noktası üzerinden geçer. Bir aracı düğüm
+yola girdiğinde kurban yolu iki ayrı IP akışına ayrılır: sensörden aracıya (7070) ve aracıdan
+monitöre (8080). Yalnızca 8080 akışını ölçmek, bu senaryolarda **yolun son bacağını**, diğer
+senaryolarda ise **yolun tamamını** ölçmek demektir — yani tek bir sütun sessizce iki farklı
+fiziksel büyüklüğü taşır.
+
+Bunun sonucu yalnızca gürültü değil, **ters yönlü bir sinyaldir**: ölçüldüğünde, aracılı yol
+doğrudan yoldan *daha hızlı* görünmektedir (14.5 ms'e karşı 16.2 ms), oysa gerçekte uçtan uca
+1.76 kat daha yavaştır (28.4 ms). Düzeltilmeseydi model, aracının varlığını "daha hızlı" diye
+öğrenirdi. Bu nedenle hem teslim oranı hem gecikme, **iki bacak birleştirilerek** hesaplanır:
+teslim oranı `monitörün aldığı / aracıya gönderilen`, gecikme ise iki bacağın toplamıdır.
+
+*(Jitter için bacakları toplamak bir yaklaşımdır — bağımsız iki bacak gerçekte `√(a²+b²)`
+gibi birleşir, dolayısıyla bu bir üst sınırdır. Yine de kullanılmaktadır, çünkü bir
+özniteliğin taşıması gereken temel özellik sınıflar arasında **tutarlı** olmasıdır; tek bacağı
+ölçmek yaklaşık değil, yanlıştır.)*
+
+**Ölçülemeyen bir değer sıfır değildir.** Kurban yoluna hiçbir paketin ulaşmadığı koşularda
+(blackhole, grey-hole `p=1`) ortalanacak bir gecikme yoktur. Bu durumda gecikme `0.0` olarak
+kaydedilseydi, veri setindeki **en ağır saldırılar en hızlı koşular** olarak görünürdü — yine
+ters yönlü bir sinyal. Bu nedenle bu değerler *eksik* olarak işaretlenir (`NaN`), ve eksikliğin
+kendisi bilgi taşıdığı için modele ayrı bir gösterge sütunuyla (`monitor_missing`) bildirilir.
+
+**Akış seviyesi ölçümün göremediği bir şey vardır.** FlowMonitor her akışın **kendi**
+transitini ölçer. Bir aracı, birinci akışı sonlandırıp ikincisini başlattığı için, aracının
+paketi elinde tuttuğu süre iki akışın *arasına* düşer: ikinci akışın gönderim zaman damgası
+tutma bittikten sonra atılır, dolayısıyla transiti değişmez. Ölçülmüştür: yaklaşık 200 ms
+tutan bir aracı, `monitor_owd_ms` değerini hiç hareket ettirmemiştir.
+
+`victim_startup_lag_ms` tam olarak bu boşluğu kapatmak için eklenmiştir: kaynağın ilk
+gönderiminden monitörün ilk alımına kadar geçen süreyi ölçer, yani aracının bekleme süresini
+ölçülen aralığın **içine** alır. Bu özniteliğin doğru okunması için iki özelliği bilinmelidir:
+tek bir pakete dayandığı için ortalamaya dayalı zamanlama özniteliklerinden daha gürültülüdür,
+ve nominal tutma süresinin yaklaşık **yarısını** izler — ilk ulaşan paket, aracının rastgele
+gecikme aralığının en alt ucundan geçen pakettir.
+
+### 4.5 Şiddet eksenleri
+
+Her saldırı sınıfının, sürekli biçimde artırılabilen bir şiddet parametresi vardır. Tespit–şiddet
+eğrisi bunun üzerine kurulur.
+
+| sınıf | şiddet parametresi | taranan değerler | tohum |
+|---|---|---|---|
+| `normal` | — | — | 40 |
+| `dos` | flood hızı (paket/s) | 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000 | 10 |
+| `ddos` | saldırgan sayısı | 1, 2, 3, 5, 8 | 5 |
+| `greyhole` | düşürme olasılığı `p` | 0.02, 0.05, 0.1 … 0.9 | 10 |
+| `blackhole` | — (tek nokta) | tam engelleme | 10 |
+
+İki uç nokta grey-hole ızgarasından **kasten çıkarılmıştır**. `p = 0` hiçbir paket düşürmez,
+yani öznitelik vektörü normal koşularla birebir aynı olur; `p = 1` her paketi düşürür, yani
+blackhole sınıfıyla birebir aynı olur. İkisi de aynı vektörü iki farklı etiket altına
+koyardı. Teslim ekseninin eğrisi bu yüzden şöyle okunur: grey-hole `p = 0.02 … 0.9`, artı
+blackhole'un kendisi `p = 1` noktası olarak.
+
+`p = 0.02` ve `0.05` noktaları sonradan eklenmiştir, ve sebebi §3.3'ün doğrudan sonucudur:
+taban artık bir gürültü tabanına sahip olduğu için (`0.9695 ± 0.0321`), `p = 0.1` bu tabandan
+yalnızca ~2.8 standart sapma, `p = 0.05` ~1.4, `p = 0.02` ise ~0.6 sapma uzaktadır. Yani
+grey-hole'ün tespit edilebilirliği **`p = 0.1`'in altında** çökmektedir ve eski ızgara bu
+bölgeyi hiç görmüyordu. Aynı gerekçeyle DoS ızgarasına 1, 2 ve 5 paket/s noktaları
+eklenmiştir: eğrinin çöktüğü yeri göstermek için tabana ulaşması gerekir.
+
+### 4.6 Eğitim sınıfı ile probe ayrımı
+
+Bir konfigürasyon ölçüldü diye eğitim verisine girmez. Bu çalışmada bazı konfigürasyonlar
+kasten **yalnızca değerlendirilmiş, hiç eğitilmemiştir**; bunlara *probe* denmektedir. Bir
+konfigürasyonun probe olmasının üç gerekçesinden biri geçerlidir:
+
+1. **Öznitelik vektörü mevcut bir sınıftan ayırt edilemiyordur**, dolayısıyla eğitmek aynı
+   vektörü iki etiket altına koymak olur. Bu, ölçülmüş bir maliyettir: 10 paket/s altındaki
+   "sessiz" DoS koşuları eğitim setine katıldığında yanlış alarm oranı **%12.5'ten %35'e**
+   çıkmış, makro-F1 **0.809'dan 0.741'e** düşmüştür.
+2. **Soru genelleme sorusudur** — "hiç görmediği bir saldırı türüne ne der?" — ve cevabı
+   eğitmek soruyu yok eder.
+3. **Eğitim setini sabit tutmak**, sonuçların bu değişiklikler boyunca karşılaştırılabilir
+   kalmasını sağlar; bir probe manşet rakamları oynatamaz.
+
+Ölçülen probe konfigürasyonları:
+
+| probe | ne sorar | koşu |
+|---|---|---|
+| `mitm` | zamanlama saldırısına ne der? (1–200 ms tutma) | 80 |
+| `relay` | **hiçbir şey yapmayan** aracıya ne der? (`p = 0`) | 40 |
+| `relaypos` | aracının konumu sonucu ne kadar değiştiriyor? | 70 |
+| `greypos` | grey-hole ızgarası, temiz bir aracı konumunda tekrar | 110 |
+| `volmatch_dos` / `volmatch_ddos` | toplam yük eşitlenirse dos ve ddos ayrılabiliyor mu? | 40 |
+
+Bu listedeki `relay` satırı, raporun §8.1'deki merkezî bulgusunun kaynağıdır: bir şiddet
+eğrisi yalnızca *taranan* değişkeni gösterir, oysa aracı eğrinin her noktasında zaten
+oradadır. Aracının kendi maliyetini ayrıca ölçmeden, eğrinin ne kadarının saldırıya ait
+olduğu bilinemez.
+
+### 4.7 Veri setinin özeti
+
+**Eğitim verisi:** 285 koşu üretilmiş, bunların 30'u (10 paket/s altındaki DoS koşuları)
+§4.6'daki birinci gerekçeyle eğitim dışına alınmıştır → **255 eğitim koşusu**.
+
+| sınıf | koşu | konfigürasyon |
+|---|---|---|
+| `greyhole` | 110 | 11 |
+| `dos` | 100 (eğitilen 70) | 7 |
+| `normal` | 40 | — |
+| `ddos` | 25 | 5 |
+| `blackhole` | 10 | — |
+
+**Probe verisi:** 340 koşu, ayrı bir dosyada tutulur ve eğitim verisiyle hiçbir noktada
+birleşmez. Bu ayrımın yalnızca bir niyet beyanı olarak bırakılmadığı, makinece
+doğrulandığı §10'da anlatılmaktadır.
 
 ## 5. Detektör ve değerlendirme yöntemi
 
-> *(Yazılacak: model seçimi; konfigürasyon-grupli bölme nedir ve neden koşu-bazlı bölmeden
-> daha sert bir sınavdır; iyimser bölmeyle farkı; hangi metriklerin neden raporlandığı.)*
+> Bu bölüm modeli tanıtır, ama asıl konusu model değil **sınavdır**. Bir sınıflandırıcının
+> skoru, ne kadar iyi olduğundan çok kendisine ne sorulduğunun bir ölçüsüdür; aynı model aynı
+> veri üzerinde, yalnızca bölme yöntemi değiştirilerek belirgin biçimde farklı skorlar
+> verebilir. Bu nedenle burada önce sınavın nasıl kurulduğu, sonra sonucun ne anlama geldiği
+> anlatılmaktadır.
+
+### 5.1 Model
+
+Detektör tek bir **çok-sınıflı Random Forest**'tır (300 ağaç, sınıf ağırlıkları dengelenmiş).
+Üç sebeple seçilmiştir.
+
+**Veri küçük ve öznitelikler heterojen.** 255 eğitim koşusu ve 13 öznitelik söz konusudur;
+öznitelikler farklı birimlerde ve çok farklı ölçeklerdedir (oranlar 0–1 arası,
+throughput'lar Mbps, gecikmeler milisaniye). Karar ağacı toplulukları bu ölçek farklarına
+duyarsızdır ve bu boyutta bir veride derin öğrenme yöntemlerinden daha güvenilirdir.
+
+**Karar süreci incelenebilir.** Bu çalışmanın sonuçlarının çoğu "model neyi okuyor" sorusuna
+verilen yanıtlardan oluşmaktadır. Öznitelik önemi ve öznitelik grubu çıkarma (*ablation*)
+analizleri, ancak modelin girdilerine tek tek müdahale edilebildiğinde anlamlıdır.
+
+**İkili sınıflandırma ayrı bir model değildir.** "Saldırı var mı" sorusu, çok-sınıflı çıktının
+türevi olarak yanıtlanır: `normal` dışındaki her tahmin bir alarmdır. Bu, iki ayrı modelin
+birbiriyle çelişmesini yapısal olarak imkânsız kılar — ikili detektörün "saldırı yok" dediği
+bir koşuya tip detektörünün "grey-hole" demesi mümkün değildir.
+
+### 5.2 Sınav: *grouped split*
+
+Değerlendirme **5 katlı çapraz doğrulama** ile yapılır: veri beş parçaya bölünür, her parça
+sırayla test kümesi olur, kalan dördüyle model eğitilir. Buradaki kritik soru, bölmenin
+**neye göre** yapıldığıdır.
+
+**Naif bölme (kullanılmadı).** Koşular rastgele dağıtılırsa, aynı saldırı ayarının bazı
+tohumları eğitimde, bazıları testte kalır. Model test edilirken, örneğin `p = 0.5` grey-hole
+koşusunu daha önce başka tohumlarda **görmüştür**. Bu bir ezber sınavıdır: gerçek bir ağda
+karşılaşılacak saldırının şiddeti, eğitim setinde bulunanla aynı olmak zorunda değildir.
+
+**Kullanılan bölme.** Aynı konfigürasyonun bütün tohumları **tek bir grup** sayılır ve grup
+bölünmez. Bunun sonucu şudur: `p = 0.5` konfigürasyonu teste düştüğünde, model o şiddeti
+hiçbir tohumda görmemiş olur. Yani sınav "bu koşuyu hatırlıyor musun" değil, **"hiç görmediğin
+bir şiddeti tanıyabiliyor musun"** sorusudur.
+
+Grup kimliği bütün sınıflar için aynı biçimde tanımlanmaz; iki farklı durum vardır:
+
+| sınıf türü | grup = | gerekçe |
+|---|---|---|
+| `normal`, `blackhole` | her koşu ayrı grup | Tek bir konfigürasyonları vardır (taranacak bir şiddet parametreleri yok). Hepsini tek grup saymak, bu sınıfların tamamını tek bir kata yığar ve diğer dört katta hiç örneği kalmaz. |
+| `dos`, `ddos`, `greyhole` | her şiddet ayarı bir grup | Şiddet ekseni boyunca genellemeyi sınamak için. |
+
+Bu tanımla 255 eğitim koşusu **73 gruba** dağılır: `normal` 40, `greyhole` 11, `blackhole` 10,
+`dos` 7, `ddos` 5.
+
+Buradan görülen bir şey, sonuçların okunması için önemlidir: `ddos` sınıfı **yalnızca 5 grup**
+ile temsil edilmektedir; yani her katta bu sınıfın tek bir konfigürasyonu test edilmektedir.
+Bu sınıfın skoru bu yüzden yapısal olarak belirsizdir ve §6'daki `ddos` rakamı bu bilgiyle
+okunmalıdır.
+
+### 5.3 Sınavın maliyeti — ve bu maliyetin ne olmadığı
+
+Aynı model, aynı veri üzerinde iki bölme yöntemiyle değerlendirildiğinde:
+
+| bölme | makro-F1 |
+|---|---|
+| rastgele (iyimser) | **0.828 ± 0.065** |
+| *grouped split* (kullanılan) | **0.788 ± 0.094** |
+| **fark** | **0.040** |
+
+Yani dürüst sınav, skoru yaklaşık 0.04 düşürmektedir. Standart sapmanın da büyüdüğüne dikkat
+edilmelidir (0.065 → 0.094): görülmemiş bir şiddetle sınanmak yalnızca skoru düşürmez,
+**sonucu daha oynak** hale getirir; hangi konfigürasyonun teste düştüğü önemli olmaya başlar.
+
+Bu farkın küçük görünmesi bir kusur değil, tabanın kalitesinin bir sonucudur. Erken bir
+ölçümde bu maliyet çok daha büyük görünmüştü, ancak o ölçüm §3.3'te anlatılan **gürültüsüz**
+veri seti üzerinde yapılmıştı: normal koşuların teslim oranı tam olarak 1.0 ve varyansı sıfır
+olduğunda, her ayrım yapay biçimde keskinleşir ve bölme yöntemini değiştirmek dramatik farklar
+üretir. Taban gerçekçi hale getirildikten sonra iki bölme birbirine yaklaşmıştır.
+
+**Bunun doğru okunuşu şudur:** bu çalışmanın kazanımı dürüst bölme yöntemini kullanmış olmak
+değil — o bir asgari gerekliliktir — **ölçülmeye değer bir taban kurmuş olmaktır.** Gürültüsüz
+bir taban üzerinde hangi bölme yöntemi kullanılırsa kullanılsın, sonuç ağın değil kurulumun
+yapaylığını ölçer.
+
+### 5.4 Hangi metrikler, neden
+
+Ham doğruluk (*accuracy*) raporlanmamaktadır. Sebebi sınıf dengesizliğidir: `blackhole`
+sınıfının 10 koşusu, veri setinin %4'ünden azdır. Bu sınıfı tamamen ıskalayan bir model bile
+yüksek doğruluk alabilir.
+
+Bunun yerine:
+
+- **Sınıf başına precision, recall ve F1.** Hangi sınıfın nerede ve **hangi yönde**
+  başarısız olduğunu gösterirler. Bir sınıfın düşük precision'ı ile düşük recall'ı çok farklı
+  sorunlardır: birincisi yanlış alarm, ikincisi kaçırılan saldırı demektir.
+- **Makro-F1.** Sınıf F1'lerinin, sınıf büyüklüğüne bakılmaksızın eşit ağırlıklı ortalaması.
+  Küçük sınıfların büyük sınıfların arkasına gizlenmesini önler.
+- **Karışıklık matrisi.** Hangi sınıfın hangisiyle karıştığını gösterir. Bu çalışmada
+  belirleyici olmuştur: `dos` ve `ddos`'un **çift yönlü** karıştığının görülmesi, sorunun bir
+  eşik kayması değil ayrımın kendisinin olmadığı anlamına gelir (§8.2).
+- **İkili görünüm:** `normal` dışındaki her tahminin alarm sayıldığı 2×2 tablo, ve ondan
+  türeyen yanlış alarm oranı.
+
+Çapraz doğrulamanın beş katından gelen sonuçlar iki ayrı biçimde bildirilmektedir ve
+karıştırılmamalıdırlar: **kat ortalaması ± kat standart sapması** (0.788 ± 0.094) sonucun ne
+kadar oynak olduğunu gösterir; **havuzlanmış** değer (0.797) ise bütün tahminler tek bir
+tabloda toplanarak hesaplanır ve sınıf başına metrikler bundan üretilir.
 
 ## 6. Sonuçlar
 
