@@ -122,6 +122,27 @@ def per_class(y_true, y_pred):
     return out
 
 
+def intensity_curve(tr, pred, fa_floor):
+    """Detection and correct-typing rate per attack, per intensity -- the headline curve.
+
+    Detection is read the same way the binary view reads it: anything not 'normal' is an
+    alarm. The floor is carried alongside on purpose. An arm is not undetectable when its
+    curve reaches zero, it is undetectable when it reaches the rate at which the model
+    alarms on normal runs anyway -- below that line the alarms are the model's ordinary
+    false alarms, not detections. A curve plotted without its floor flatters the detector.
+    """
+    d = tr.assign(pred=pred)
+    out = {"false_alarm_floor": round(fa_floor, 4)}
+    for scenario in ("dos", "ddos", "greyhole", "blackhole"):
+        arm = d[d.scenario == scenario]
+        out[scenario] = {
+            str(i): {"n": int(len(rows)),
+                     "detected": round(float((rows.pred != "normal").mean()), 3),
+                     "typed_correctly": round(float((rows.pred == scenario).mean()), 3)}
+            for i, rows in arm.groupby("intensity")}
+    return out
+
+
 def binary_view(df, pred):
     """Detection read off the multiclass output: anything not 'normal' is an alarm."""
     truth = (df.label_class != "normal").astype(int)
@@ -213,6 +234,7 @@ def collect():
         },
         "per_class_honest": per_class(y, oof),
         "binary_honest": binary_view(tr, oof),
+        "detection_vs_intensity": intensity_curve(tr, oof, fa_floor),
         "relay_baseline": {
             "seeds": int(len(relay)),
             "false_alarm_floor_no_relay_no_attack": round(fa_floor, 4),

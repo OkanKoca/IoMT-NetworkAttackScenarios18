@@ -806,13 +806,324 @@ tabloda toplanarak hesaplanır ve sınıf başına metrikler bundan üretilir.
 
 ## 6. Sonuçlar
 
-> *(Yazılacak: ikili tespit; çok-sınıflı sınıf bazında sonuçlar; karışıklık matrisi;
-> tespit–şiddet eğrisi; eşik ayarı.)*
+> Bu bölüm ölçülen sonuçları verir: saldırının var olup olmadığının ne kadar
+> güvenilir anlaşıldığı, hangi saldırının hangisiyle karıştığı, ve saldırı zayıfladıkça
+> tespitin nereye kadar dayandığı. Sonuçların **yorumu** burada değil §8'dedir; burada
+> ne ölçüldüğü, orada ölçülenin gerçekte ne anlama geldiği anlatılmaktadır. Bu ayrım
+> bilinçlidir, çünkü aşağıdaki rakamların bir kısmı ilk okunduğu gibi değildir.
+
+### 6.1 İkili tespit: saldırı var mı?
+
+Çok-sınıflı çıktı ikiliye indirgendiğinde (`normal` dışındaki her tahmin bir alarmdır),
+255 eğitim koşusu üzerinde §5.2'nin sınavıyla:
+
+| | tahmin: normal | tahmin: saldırı |
+|---|---|---|
+| **gerçek: normal** | 34 | 6 |
+| **gerçek: saldırı** | 11 | 204 |
+
+Buradan: saldırı precision **0.971**, recall **0.949**, **F1 = 0.960**. Yanlış alarm oranı
+**0.150** — yani saldırısız 40 koşunun 6'sında model boş yere alarm vermektedir.
+
+Bu 0.150'lik oran raporun geri kalanında sürekli geri dönecektir ve ismi **yanlış-alarm
+tabanıdır**. Önemi şudur: bir tespit oranı, sıfırla değil bu çizgiyle karşılaştırılarak
+okunmalıdır. Bir saldırı türünün tespit oranı 0.150'ye indiyse, model o saldırıyı
+görmemektedir — yalnızca saldırısız koşularda da yaptığı hatayı yapmaktadır.
+
+### 6.2 Hangi saldırı: sınıf bazında sonuçlar
+
+| sınıf | precision | recall | F1 | koşu |
+|---|---|---|---|---|
+| `normal` | 0.756 | 0.850 | 0.800 | 40 |
+| `dos` | 0.681 | 0.671 | 0.676 | 70 |
+| `ddos` | 0.600 | 0.600 | 0.600 | 25 |
+| `greyhole` | 0.981 | 0.936 | **0.958** | 110 |
+| `blackhole` | 0.909 | 1.000 | **0.952** | 10 |
+| **makro-F1** | | | **0.797** | 255 |
+
+*(Buradaki makro-F1 havuzlanmış değerdir; §5.4'te açıklandığı gibi kat ortalaması
+0.788 ± 0.094'tür.)*
+
+Tablo iki gruba ayrılıyor. **Teslim eksenindeki saldırılar güvenilir biçimde
+tanınmaktadır**: `greyhole` 0.958 ve `blackhole` 0.952. **Hacim eksenindeki saldırılar
+tanınmamaktadır**: `dos` 0.676, `ddos` 0.600.
+
+![Şekil 1 — Karışıklık matrisi (grouped split). Satırlar gerçek sınıf, sütunlar tahmin.](../day5-10072026-detector/figs/G-confusion-honest.png)
+
+Karışıklık matrisi, `dos` ile `ddos` arasındaki karışmanın **çift yönlü** olduğunu
+göstermektedir. Bu ayrım önemlidir: tek yönlü bir karışma bir eşik ya da sınıf dengesizliği
+sorununa işaret eder ve düzeltilebilir; çift yönlü karışma, iki sınıfın öznitelik uzayında
+**birbirinden ayrılmadığı** anlamına gelir. §8.2 bunun sebebini gösterecektir.
+
+`ddos` sınıfının 0.600'ü ayrıca §5.2'deki uyarıyla okunmalıdır: bu sınıf yalnızca 5
+konfigürasyonla temsil edilmektedir, dolayısıyla her katta tek bir konfigürasyon test
+edilmektedir. Rakam gerçek ama **belirsizliği yüksektir**.
+
+### 6.3 Tespit–şiddet eğrisi
+
+Çalışmanın istenen manşet çıktısı budur: saldırı zayıfladıkça tespitin nasıl bozulduğu.
+Her saldırı kendi şiddet ekseninde taranmış ve her noktada tespit oranı ölçülmüştür.
+
+![Şekil 2 — Tespit ve doğru-tipleme oranı, saldırı şiddetine göre. Kesikli çizgi yanlış-alarm tabanıdır (0.150).](../day5-10072026-detector/figs/H-detection-vs-intensity-honest.png)
+
+| saldırı | şiddet | tespit | doğru tip |
+|---|---|---|---|
+| `dos` | 10 pkt/s | **0.40** | 0.40 |
+| `dos` | 20 pkt/s | 0.70 | 0.70 |
+| `dos` | 50 pkt/s | 0.80 | 0.70 |
+| `dos` | 100 pkt/s | 1.00 | 0.90 |
+| `dos` | 200 pkt/s | 1.00 | 0.90 |
+| `dos` | 500 pkt/s | 1.00 | 0.30 |
+| `dos` | 1000 pkt/s | 1.00 | 0.80 |
+| `ddos` | 1–8 saldırgan | 1.00 (hepsinde) | 0.00 – 1.00 |
+| `greyhole` | `p` = 0.02 – 0.9 | 1.00 (hepsinde) | 0.60 – 1.00 |
+| `blackhole` | tam engelleme | 1.00 | 1.00 |
+
+**Gerçek bir çöküş eğrisi olan tek kol `dos`'tur.** Flood hızı 100 paket/s'nin üzerindeyken
+tespit kusursuzdur; 50'de 0.80'e, 20'de 0.70'e, 10 paket/s'de **0.40**'a iner. 10 paket/s
+seviyesinde flood, tıkanmış bir ortamda yaklaşık 82 kbps taşımaktadır — yani meşru trafiğin
+kendi dalgalanmasının içinde kalmaktadır. Eğrinin bu ucu, taban çizgisi olan 0.150'ye
+yaklaşmaktadır.
+
+**Diğer üç kolun eğrisi düzdür: her şiddette 1.00.** Bu ilk bakışta mükemmel bir sonuç gibi
+görünür — grey-hole, paketlerin yalnızca %2'sini düşürdüğünde bile kusursuz tespit
+edilmektedir. Bu okuma yanlıştır, ve neden yanlış olduğu §8.1'in konusudur. Kısaca: `p = 0.02`
+ile `p = 0.9` arasındaki her koşuda ağda **bir aracı düğüm vardır**, ve tespit edilen şey
+büyük ölçüde saldırı değil o aracının varlığıdır. Bir şiddet eğrisi yalnızca taranan
+değişkeni gösterir; taranmayan ama her noktada sabit duran bir etken varsa, eğri onu değil
+onun gölgesini çizer.
+
+**Tipleme eğrisi tespit eğrisinden bağımsızdır** ve iki yerde çarpıcı biçimde ayrışır:
+
+- `ddos`, **tek saldırganla** çalıştırıldığında koşuların **hiçbirinde** doğru
+  tiplenmemektedir (0.00) — hepsi `dos` olarak işaretlenmektedir. Bu bir hata değil, doğru
+  cevaptır: tek kaynaktan gelen bir flood zaten DoS'tur. Sınıf etiketi ile ağda olan biten
+  bu noktada ayrışmaktadır.
+- `dos`, 500 paket/s'de doğru tipleme oranı **0.30**'a düşmekte, sonra 1000'de tekrar 0.80'e
+  çıkmaktadır. Tekdüze olmayan bu davranış, hacim ekseninin `ddos` ile örtüştüğü bölgeye
+  denk gelmektedir: yeterince şiddetli bir tek-kaynaklı flood, çok-kaynaklı bir saldırının
+  hasar imzasını üretmektedir.
+
+### 6.4 Modelin neye baktığı
+
+![Şekil 3 — Öznitelik önemi (permutation importance), tüm sınıflar.](../day5-10072026-detector/figs/J-feature-importance-global.png)
+
+Öznitelik önemi sıralaması, §4.3'teki üç modalitenin de kullanıldığını göstermektedir:
+teslim eksenindeki öznitelikler grey-hole ve blackhole ayrımını, hacim eksenindekiler
+flood'ların tespitini taşımaktadır. `victim_startup_lag_ms` sıralamanın ortalarında yer
+almaktadır (0.025 ± 0.022) — yani §4.4'te anlatılan boşluğu kapatmak için eklenen bu
+özniteliğin modele katkısı ölçülebilir düzeydedir.
+
+### 6.5 Çalışma noktası seçimi
+
+Bir detektör sahaya çıkarılırken tek bir eşik seçilmesi gerekir: modelin ürettiği saldırı
+olasılığı hangi değerin üzerindeyse alarm verilecektir. Düşük eşik daha çok saldırı yakalar
+ama daha çok yanlış alarm üretir; yüksek eşik tersini yapar.
+
+![Şekil 4 — Eşik değerine göre tespit ve yanlış alarm.](../day5-10072026-detector/figs/N-esik-ayari.png)
+
+**Bu analiz bir sınırlılıkla birlikte okunmalıdır ve o sınırlılık raporda gizlenmemektedir.**
+Eşik, saldırısız koşuların olasılık dağılımının belirli bir yüzdeliğinden seçilmekte, sonra
+yanlış alarm oranı **aynı** saldırısız koşular üzerinde ölçülmektedir. Bu durumda ölçülen
+yanlış alarm oranı, seçilen bütçeye **tanım gereği** eşit çıkar; bir bulgu değil, seçim
+yönteminin kendisinin tekrarıdır. Aynı sebeple yanındaki tespit oranları da iyimserdir ve
+bir **üst sınır** olarak okunmalıdır. Bağımsız bir tahmin için eşiğin ayrı bir koşu kümesinde
+seçilip başka bir kümede ölçülmesi gerekir; bu, mevcut veri büyüklüğüyle yapılmamıştır.
 
 ## 7. Yeni saldırı
 
-> *(Yazılacak: 7.1 grey-hole tasarımı, gerçeklenmesi ve doğrulanması; 7.2 timing-MITM ve
-> akış seviyesi ölçümün yapısal körlüğü; 7.3 değerlendirilip reddedilen alternatifler.)*
+> Çalışmanın dördüncü teslimatı, kaynak çalışmada bulunmayan **sessiz** bir saldırının
+> gerçeklenmesidir. Bu bölüm seçilen saldırıyı, nasıl yazıldığını ve ağı fiilen değiştirdiğinin
+> nasıl doğrulandığını anlatır. Ardından ikinci bir saldırı gelmektedir: gerçeklenmiş, ölçülmüş,
+> fakat modele **sınıf olarak eklenmemiştir** — ve eklenmeme sebebi bir başarısızlık değil,
+> ölçüm katmanının yapısal bir körlüğüdür.
+
+### 7.1 Neden grey-hole
+
+Kaynak çalışmanın bütün saldırıları **gürültülüdür**: flood'lar trafiği görünür biçimde
+artırır, blackhole her paketi düşürür. Bu tür saldırıları yakalamak için makine öğrenmesine
+gerek yoktur; basit bir eşik yeter. Sessiz bir saldırı, detektörü gerçekten çalışmak zorunda
+bırakır.
+
+Üç aday değerlendirilmiştir:
+
+| aday | fikir | karar |
+|---|---|---|
+| Düşük hızlı / darbeli DoS | Ağ toparlanırken zamanlanmış kısa patlamalar; ortalama trafik normal görünür | reddedildi |
+| **Grey-hole (seçici iletmeme)** | Yol üzerindeki düğüm paketlerin **bir kısmını** düşürür, gerisini iletir | **seçildi** |
+| Ağ katmanında sahte veri enjeksiyonu | Aktarılan paketlerin içeriği bozulur | reddedildi |
+
+**Grey-hole seçilmiştir**, üç sebeple. Mevcut UDP trafiğiyle çalışır. `p` (düşürme olasılığı)
+biçiminde doğal ve sürekli bir şiddet ekseni verir — tespit–şiddet eğrisi için tam olarak
+gereken şey. Ve çalışmanın gürültülü blackhole'ünün doğal sessiz kardeşidir: aynı mekanizma,
+kısmi uygulanmış hâli.
+
+Diğer ikisinin reddedilme gerekçeleri §7.4'tedir; ikisi de somut ölçümlere dayanmaktadır.
+
+### 7.2 Gerçekleme
+
+**Kritik tasarım kararı: saldırgan gerçekten yolun üzerinde olmalıdır.** §2.2'de gösterildiği
+gibi kaynak çalışmanın blackhole'ü hiçbir paket düşürmemektedir, çünkü saldırgan düğüm
+yönlendirme yolunda değildir ve yalnızca kendisine adreslenmiş çerçeveleri görmektedir. Bozuk
+bir geri çağrımı düzeltmek bu sorunu çözmez; sorun geri çağrımda değil topolojidedir.
+
+Bu nedenle grey-hole, ağ yoluna **fiilen yerleşen** bir NS-3 uygulaması olarak yazılmıştır:
+
+```
+EKG kaynağı (STA2)  --UDP 7070-->  grey-hole relay (STA8)  --UDP 8080-->  monitör (STA0)
+                                          |
+                                     p olasılıkla düşür
+```
+
+Kurban trafiği doğrudan monitöre değil, aracının dinlediği porta gönderilir. Aracı her paket
+için `[0,1)` aralığında bir rastgele sayı çeker; sayı `p`'den küçükse paket sessizce
+düşürülür, değilse aynı boyutta bir paket üretilip monitöre iletilir.
+
+```cpp
+while ((packet = socket->RecvFrom(from)))
+{
+    if (m_rng->GetValue() < m_dropProb) { m_dropped++; continue; }   // sessizce düşür
+    Ptr<Packet> fresh = Create<Packet>(packet->GetSize());           // ilet
+    m_txSocket->Send(fresh);
+    m_forwarded++;
+}
+```
+
+İki ayrıntı kayda değerdir. Alınan paket nesnesi doğrudan yeniden gönderilmez; taşıdığı
+FlowMonitor etiketi ikinci bacağı yanlış sınıflandırırdı, bu yüzden aynı boyutta taze bir
+paket üretilir. Bunun sonucu olarak **yük içeriği korunmaz** — bu, ileride içerik tabanlı bir
+özniteliğin buraya sessizce takılacağı bir nokta olduğu için kodda not edilmiştir, ve §7.4'te
+sahte veri enjeksiyonunun neden reddedildiğinin de sebebidir.
+
+Ayrıca `p = 1` verildiğinde bu uygulama **çalışan bir blackhole olur** — kaynak çalışmanın
+çalışmayan blackhole'ünün yerine geçen budur. İki sınıf aynı koddan gelmektedir, yalnızca
+parametreleri farklıdır.
+
+### 7.3 Saldırının ağı gerçekten değiştirdiğinin doğrulanması
+
+Bir saldırının çalıştığının kanıtı derlenmesi değil, ağı ölçülebilir biçimde değiştirmesidir.
+Grey-hole için beklenen davranış açıktır: teslim oranı yaklaşık `1 − p` olmalı ve `p` ile
+tekdüze azalmalıdır.
+
+| `p` | ölçülen teslim oranı | beklenen (`1 − p`) |
+|---|---|---|
+| 0.00 (normal) | 0.970 | 1.00 |
+| 0.02 | 0.895 | 0.98 |
+| 0.05 | 0.852 | 0.95 |
+| 0.10 | 0.826 | 0.90 |
+| 0.20 | 0.665 | 0.80 |
+| 0.30 | 0.635 | 0.70 |
+| 0.50 | 0.458 | 0.50 |
+| 0.70 | 0.277 | 0.30 |
+| 0.90 | 0.091 | 0.10 |
+| 1.00 (blackhole) | 0.000 | 0.00 |
+
+Teslim oranı `p` ile tekdüze düşmekte ve iki uçta tam olarak beklenen değerleri
+vermektedir. **Saldırı çalışmaktadır.**
+
+Ölçülen değerlerin `1 − p`'nin bir miktar altında kalması bir hata değildir ve iki kaynağı
+vardır: taban zaten %3 kayıp içermektedir (§3.3), ve trafik artık iki kablosuz bacaktan
+geçmektedir — her bacak kendi kaybını eklemektedir. Sapmanın küçük `p` değerlerinde oransal
+olarak daha büyük olması da bundandır: `p = 0.02`'de saldırının kendi katkısı, aracının salt
+varlığının maliyetinin yanında küçük kalmaktadır. Bu gözlem §8.1'in çıkış noktasıdır.
+
+Sınıflandırma tarafında sonuç §6.2'de verilmiştir: `greyhole` F1 = **0.958**, veri setindeki
+en güvenilir tanınan saldırı sınıfı. Ancak §6.3'te görüldüğü gibi tespit eğrisi düzdür — ve
+bunun sebebi §8.1'de açıklanmaktadır.
+
+### 7.4 İkinci saldırı: zamanlama-MITM ve ölçümün göremediği eksen
+
+Grey-hole tamamlandıktan sonra, öznitelik tasarımında bir **boşluk** olduğu fark edilmiştir.
+§4.3'teki üç modaliteden ikisinin kontrollü bir saldırısı vardı — hacim (dos, ddos) ve teslim
+(grey-hole, blackhole) — ama **zamanlama ekseninin hiçbir saldırısı yoktu.** Zamanlama
+ölçülüyordu, fakat hiçbir saldırının parametresi değildi.
+
+Bu boşluğu doldurmak için ikinci bir saldırı yazılmıştır: **zamanlama-MITM**. Aynı aracı,
+paketleri düşürmek yerine `d` milisaniye **tutup sonra iletir**. Tutma süresi paket başına
+`U[0.5d, 1.5d]` aralığından çekilir; sabit bir gecikme tek yönlü gecikmeyi kaydırır ama
+jitter'ı hiç hareket ettirmezdi, oysa ele geçmiş bir ağ geçidinin işlem gecikmesi de sabit
+değildir. `d = 1 … 200 ms` aralığında taranmıştır.
+
+Bu tasarım, aynı aracıyı üç davranışın ortak zemini yapmaktadır:
+
+| aracı ne yapıyor | sınıf | eksen |
+|---|---|---|
+| hiçbir şey (iletir, geciktirmez) | *taban* | — |
+| `p` olasılıkla düşürür | `greyhole` | teslim |
+| hepsini düşürür (`p = 1`) | `blackhole` | teslim (uç) |
+| `d` ms geciktirip iletir | `mitm` | zamanlama |
+
+**Sonuç: saldırı ağı değiştirmektedir, ama akış seviyesi ölçüm bunu görmemektedir.**
+Gecikme 1 ms'den 200 ms'ye çıkarılırken kurban yolunun ölçülen tek yön gecikmesi
+(`monitor_owd_ms`) **hiç hareket etmemiştir** — 28–42 ms bandında kalmıştır.
+
+Sebebi yapısaldır ve §4.4'te tanıtılmıştır: FlowMonitor her akışın kendi transitini ölçer.
+Aracı birinci akışı sonlandırıp ikincisini başlattığı için, tutma süresi iki akışın
+**arasına** düşer; ikinci akışın gönderim zaman damgası tutma bittikten sonra atılır,
+dolayısıyla transiti değişmez. Jitter de aynı sebeple kördür: RFC 1889'un tanımı
+`D(i,j) = (Rj − Ri) − (Sj − Si)` biçimindedir ve transit sabitken sabit bir tutmayı
+**tam olarak sıfırlar**.
+
+Bu boşluğu kapatmak için `victim_startup_lag_ms` özniteliği eklenmiştir (§4.4). Tutma
+süresini ölçülen aralığın içine aldığı için saldırıyı gerçekten görmektedir:
+
+| eklenen gecikme | `victim_startup_lag_ms` (medyan) |
+|---|---|
+| 1 ms | 28.05 |
+| 200 ms | 162.35 |
+
+Değer tekdüze artmaktadır, yani ölçüm düzeltilmiştir.
+
+**Buna rağmen `mitm` bir eğitim sınıfı yapılmamıştır.** Sebep iki ölçümdür:
+
+1. **Tespit eğrisi doğduğu gibi ölüdür.** Gecikme 1 ms'den 200 ms'ye çıkarken tespit sabit
+   **1.00** kalmaktadır; 80 koşunun 80'i de `greyhole` olarak işaretlenmektedir. Eğri
+   `delay` hakkında hiçbir bilgi taşımamaktadır.
+2. **Sınıf olarak eğitildiğinde öğrendiği şey zamanlama değildir.** Altıncı sınıf olarak
+   eklendiğinde F1 = 0.859 almaktadır — ilk bakışta iyi bir sonuç. Ancak aynı modele
+   **hiçbir şey yapmayan** aracı sorulduğunda, koşuların **%80'ine `mitm`** demektedir.
+   Yani modelin `mitm` sınıfı pratikte *"paket düşürmeyen yol üstü aracı"* anlamına
+   gelmektedir.
+
+İkinci ölçüm belirleyicidir: **yüksek F1'in kendisi, modelin yanlış şeyi öğrendiğinin
+delilidir.** Bu sınıfı eğitim setine eklemek, `greyhole`'ü (F1 0.958) karıştırılabilir bir
+çifte dönüştürme riski taşırdı — `dos`↔`ddos`'ta zaten yaşanan başarısızlığın aynısı.
+
+Dolayısıyla zamanlama-MITM raporda **bir saldırı sınıfı olarak değil, akış seviyesi ölçümün
+yapısal sınırının kanıtı olarak** sunulmaktadır. Bu, çalışmanın ana bulgusuyla aynı damardan
+gelmektedir ve §8.4'te onunla birleştirilecektir.
+
+### 7.5 Değerlendirilip reddedilen alternatifler
+
+Reddetme gerekçeleri burada kayda geçirilmektedir, çünkü her biri ölçüme dayanmaktadır ve
+"neden bu saldırı da eklenmedi" sorusunun cevabıdır.
+
+**Sahte veri enjeksiyonu — hayır.** İlk gerekçe, paket içeriğini bozmanın akış seviyesi
+metrikleri hiç hareket ettirmemesiydi: throughput, gecikme ve kayıp içerikten bağımsızdır,
+dolayısıyla ölçülebilir bir eğri üretmez. Gerçekleme aşamasında daha kesin bir sebep ortaya
+çıkmıştır: **bozulacak tıbbi değer yoktur.** Aracı, §7.2'de görüldüğü gibi gelen paketi
+iletmez, aynı boyutta **sıfır dolgulu** taze bir paket üretir. Anlamlı bir enjeksiyon için
+gerçek EKG yükü üreten bir uygulama katmanı ve bunu doğrulayan bir alıcı gerekirdi —
+pahalı bir iş, ve sonunda akış tabanlı detektör yine hiçbir şey görmezdi.
+
+**Darbeli DoS — şimdilik hayır, ama eski gerekçe geçersizdir.** Başlangıçta "kurbanlar UDP
+kullanıyor, sömürülecek bir tıkanıklık kontrolü yok" diye reddedilmişti. §3.3'teki
+kalibrasyon bu gerekçeyi geçersiz kılmıştır: ağır arka plan akışı ve 50 paketlik MAC
+kuyruğuyla ortamda artık **gerçek tıkanıklık** vardır, dolayısıyla kısa patlamalarla kuyruğu
+taşırıp ortalamayı normal göstermek fiziksel olarak mümkündür. Yine de eklenmemiştir, çünkü
+**hacim eksenine** düşmektedir — yani `dos`↔`ddos` ayrımının zaten çöktüğü eksene. Yeni bir
+sınıf orada en zayıf metriği daha da zayıflatırdı.
+
+**MQTT-flood — hayır.** NS-3'te yerleşik bir MQTT modeli yoktur ve TCP + broker emülasyonu
+günler alır. Asıl sebep bu değildir: **akış seviyesinde MQTT-flood ile DoS aynı şeydir.**
+Üçüncü bir flood sınıfı, en zayıf metriği kötüleştirmekten başka bir şey yapmazdı. Kaynak
+çalışmanın kendi verisindeki gözlem de bunu desteklemektedir — orada `mqtt` koşuları
+`normal` koşularla birebir aynı dosyalardır (§2.4).
+
+Bu üç gerekçenin ortak noktası, §8.4'te toplanan bulguya işaret etmektedir: akış seviyesindeki
+öznitelikler saldırganın **niyetini** değil kullandığı **mekanizmayı** görür. Bu yüzden yeni
+bir saldırı eklemek ancak **boş bir eksene** düşüyorsa bilgi katar — zamanlama-MITM'in
+eklenme sebebi de tam olarak buydu.
 
 ## 8. Ne ölçtüğümüzü sorgulamak
 
