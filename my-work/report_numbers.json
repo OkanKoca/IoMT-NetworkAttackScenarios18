@@ -41,7 +41,8 @@
     "optimistic_std_across_folds": 0.0649,
     "cost_of_grouped_split": 0.0395,
     "macro_f1_if_stealth_dos_were_trained": 0.7616,
-    "cost_of_training_stealth_dos": 0.0264
+    "cost_of_training_stealth_dos": 0.0264,
+    "false_alarm_rate_if_stealth_dos_were_trained": 0.3
   },
   "per_class_honest": {
     "normal": {
@@ -214,6 +215,42 @@
         "n": 10,
         "detected": 1.0,
         "typed_correctly": 1.0
+      }
+    },
+    "dos_stealth_probe": {
+      "note": "held out of training, so predicted by the model fitted on all 255 training rows rather than out-of-fold like the arms above",
+      "1.0": {
+        "n": 10,
+        "detected": 0.4,
+        "typed_correctly": 0.4
+      },
+      "2.0": {
+        "n": 10,
+        "detected": 0.2,
+        "typed_correctly": 0.2
+      },
+      "5.0": {
+        "n": 10,
+        "detected": 0.2,
+        "typed_correctly": 0.2
+      },
+      "separation_from_normal": {
+        "delivery_ratio": {
+          "normal": 0.9754,
+          "stealth_dos": 0.9723,
+          "difference": -0.0032,
+          "normal_std": 0.0321,
+          "difference_in_normal_sigmas": -0.1,
+          "seeds_used": 10
+        },
+        "total_throughput_mbps": {
+          "normal": 11.6523,
+          "stealth_dos": 11.6105,
+          "difference": -0.0418,
+          "normal_std": 1.1494,
+          "difference_in_normal_sigmas": -0.04,
+          "seeds_used": 10
+        }
       }
     }
   },

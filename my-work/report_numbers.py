@@ -171,9 +171,17 @@ def collect():
 
     # Cost of training the stealth DoS configurations rather than holding them out. The
     # report quotes this as evidence for the hold-out rule, so it is measured, not recalled.
+    # Both halves of that evidence are computed: the macro-F1 and the false-alarm rate.
+    # The report used to quote the pair as "12.5% -> 35%, 0.809 -> 0.741", none of which
+    # any current run produces -- they predate the calibrated baseline of section 3.3.
     Xa, ya, ga = build_X(df), df.label_class, group_ids(df)
     with_stealth = cross_val_score(RandomForestClassifier(**RF), Xa, ya,
                                    cv=GROUPED, groups=ga, scoring="f1_macro")
+    oof_with_stealth = cross_val_predict(RandomForestClassifier(**RF), Xa, ya,
+                                         cv=GROUPED, groups=ga)
+    normals_all = df[df.scenario == "normal"]
+    far_with_stealth = float(pd.Series(oof_with_stealth, index=df.index)
+                             [normals_all.index].ne("normal").mean())
 
     # Benign relay: the on-path hop with its attack switched off. R0 is a RATE, so it
     # needs no pairing and uses every seed; the delivery chain below is a DIFFERENCE, so
@@ -184,6 +192,33 @@ def collect():
     normals = tr[tr.scenario == "normal"]
     fa_floor = float(pd.Series(oof, index=tr.index)[normals.index].ne("normal").mean())
     r0 = float((relay_pred != "normal").mean())
+
+    # The bottom of the DoS curve. These runs are held out of training, so they have no
+    # out-of-fold prediction; they are read with the model fitted on all 255 training rows
+    # -- the detector as shipped. Kept under its own key instead of merged into the dos
+    # arm because the two halves would then come from different predictors, and a curve
+    # whose points were not all measured the same way should say so in the data rather
+    # than only in a sentence next to it.
+    stealth = df[(df.scenario == "dos") & (df.intensity < 10)]
+    stealth_pred = pd.Series(fitted.predict(build_X(stealth)), index=stealth.index)
+    stealth_curve = {
+        str(i): {"n": int(len(rows)),
+                 "detected": round(float(stealth_pred[rows.index].ne("normal").mean()), 3),
+                 "typed_correctly": round(float(stealth_pred[rows.index].eq("dos").mean()), 3)}
+        for i, rows in stealth.groupby("intensity")}
+
+    # Why those runs are held out, stated as a measurement rather than an assertion: at
+    # these rates the flood moves neither of the two features that carry the volume axis.
+    # Paired over the seeds the two arms share, for the reason paired_means exists.
+    stealth_gap = {}
+    for col in ("delivery_ratio", "total_throughput_mbps"):
+        arms, seeds = paired_means({"normal": normals, "stealth_dos": stealth}, col)
+        stealth_gap[col] = {**{k: round(v, 4) for k, v in arms.items()},
+                            "difference": round(arms["stealth_dos"] - arms["normal"], 4),
+                            "normal_std": round(float(normals[col].std()), 4),
+                            "difference_in_normal_sigmas": round(
+                                (arms["stealth_dos"] - arms["normal"]) / normals[col].std(), 2),
+                            "seeds_used": len(seeds)}
 
     chain_arms = {"normal": normals,
                   "relay_p0": relay,
@@ -231,10 +266,19 @@ def collect():
             "macro_f1_if_stealth_dos_were_trained": round(float(with_stealth.mean()), 4),
             "cost_of_training_stealth_dos": round(
                 float(honest.mean() - with_stealth.mean()), 4),
+            "false_alarm_rate_if_stealth_dos_were_trained": round(far_with_stealth, 4),
         },
         "per_class_honest": per_class(y, oof),
         "binary_honest": binary_view(tr, oof),
-        "detection_vs_intensity": intensity_curve(tr, oof, fa_floor),
+        "detection_vs_intensity": {
+            **intensity_curve(tr, oof, fa_floor),
+            "dos_stealth_probe": {
+                "note": "held out of training, so predicted by the model fitted on all "
+                        "255 training rows rather than out-of-fold like the arms above",
+                **stealth_curve,
+                "separation_from_normal": stealth_gap,
+            },
+        },
         "relay_baseline": {
             "seeds": int(len(relay)),
             "false_alarm_floor_no_relay_no_attack": round(fa_floor, 4),
