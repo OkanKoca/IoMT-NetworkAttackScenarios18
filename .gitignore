@@ -35,10 +35,18 @@ IoMT-Gurultu-ve-Tasarim-Kararlari-Raporu.docx
 IoMT-Progress-Report-2026-07-21.docx
 IoMT-Simulasyon-Tabani-ve-Yeni-Veri-Seti-Raporu.docx
 
-# Report generator: writes a .docx from scratch, while the reports themselves are
-# hand-edited and kept out of the repo. Keeping it tracked invites regenerating
-# over those edits.
-my-work/*/make_report.py
+# Per-stage report generators: each writes a .docx from scratch, while those reports
+# themselves are hand-edited and kept out of the repo. Keeping them tracked invites
+# regenerating over the edits. Scoped to the day folders on purpose -- the
+# consolidated report's generator in my-work/report/ IS tracked, because there the
+# source of truth is the tracked Markdown and the .docx is a build product.
+my-work/day*/make_report.py
+
+# The consolidated report's build product. Regenerated from the tracked Markdown by
+# my-work/report/make_report.py, and hand-finished afterwards (cover, contents, page
+# numbers) -- so the file on disk is not always what the generator would produce.
+my-work/report/*.docx
 
 # LibreOffice lock files, created while a csv is open in the GUI
 .~lock.*#
+my-work/report/*.docx.built
