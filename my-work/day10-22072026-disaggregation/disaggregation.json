@@ -1,0 +1,89 @@
+{
+  "generated_from": {
+    "release": "v1.1",
+    "dataset_sha256": null,
+    "training_rows": 255,
+    "rf_seeds": 20
+  },
+  "question": "how much of the volume-matched typing drop, 0.925 -> 0.740, is the release-v1 probe defect and how much is the other two things that changed with it",
+  "cells": {
+    "old_one_forest": 0.925,
+    "old_twenty": 0.9213,
+    "new_one_forest": 0.725,
+    "new_twenty": 0.74
+  },
+  "total_drop": -0.185,
+  "in_sample_rows": {
+    "old_block": 15,
+    "new_block": 0,
+    "old_by_arm": {
+      "1": 10,
+      "2": 5,
+      "4": 0,
+      "8": 0
+    }
+  },
+  "per_arm": {
+    "1": {
+      "old": 1.0,
+      "new": 0.455,
+      "delta": -0.545
+    },
+    "2": {
+      "old": 0.825,
+      "new": 0.505,
+      "delta": -0.32
+    },
+    "4": {
+      "old": 0.86,
+      "new": 1.0,
+      "delta": 0.14
+    },
+    "8": {
+      "old": 1.0,
+      "new": 1.0,
+      "delta": 0.0
+    }
+  },
+  "within_arm_control": {
+    "arm": "ddos na=2, old block",
+    "fitted_on": 1.0,
+    "not_fitted_on": 0.65,
+    "memorisation_inflation": 0.35,
+    "note": "same configuration and the same forests; the only difference between the two groups is whether the row was in the fit"
+  },
+  "attribution": {
+    "from_provenance": -0.2512,
+    "from_seeds": 0.07,
+    "from_forest_averaging": 0.0056,
+    "unexplained_interaction": -0.0094,
+    "method": "the arms that were clean in both blocks measure the seed term; it is subtracted from each arm's delta and the remainder is attributed to provenance, weighted 10/40 per arm",
+    "caveat": "both clean arms reach 1.000 in the new block, so the seed term is estimated against a ceiling on twenty runs; treat it as an upper bound on noise rather than a measured effect. It is positive either way -- nothing but provenance pushes the number down"
+  },
+  "per_arm_attribution": {
+    "1": {
+      "delta": -0.545,
+      "in_sample_fraction": 1.0,
+      "from_seeds": 0.0175,
+      "from_provenance": -0.1537
+    },
+    "2": {
+      "delta": -0.32,
+      "in_sample_fraction": 0.5,
+      "from_seeds": 0.0175,
+      "from_provenance": -0.0975
+    },
+    "4": {
+      "delta": 0.14,
+      "in_sample_fraction": 0.0,
+      "from_seeds": 0.0175,
+      "from_provenance": 0.0175
+    },
+    "8": {
+      "delta": 0.0,
+      "in_sample_fraction": 0.0,
+      "from_seeds": 0.0175,
+      "from_provenance": -0.0175
+    }
+  }
+}

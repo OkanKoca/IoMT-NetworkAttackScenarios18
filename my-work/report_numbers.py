@@ -249,9 +249,19 @@ def collect():
                 "source": "notebook 10",
                 "replaces": "the reported 92.5%, whose DoS arm and half of whose ddos "
                             "na=2 arm were training rows (release v1 probe defect)",
-                "caveat": "the drop mixes three changes -- removal of the in-sample "
-                          "rows, new seeds, and averaging over 20 RF seeds instead of "
-                          "one -- which were not separated",
+                "drop_attributed": {
+                    "total": -0.185,
+                    "from_memorised_probe_rows": -0.251,
+                    "from_new_seeds": +0.070,
+                    "from_averaging_over_forests": +0.006,
+                    "unexplained_interaction": -0.009,
+                    "source": "day10-22072026-disaggregation/disaggregation.json",
+                    "reading": "the two changes that came with the fix push the number "
+                               "UP; the entire decline is the defect. Control: in the "
+                               "old block's ddos na=2 arm the five seeds the forest was "
+                               "fitted on scored 1.000 and the five it was not scored "
+                               "0.650, same configuration and same forests",
+                },
             },
             "dos_vs_ddos_balanced_accuracy": {
                 "unmatched": 0.662, "damage_matched": 0.475, "chance": 0.500,

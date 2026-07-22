@@ -190,9 +190,28 @@ değiştirildiğinde doğru-tip oranı **0.925** çıkıyordu.
 
 *Birincisi, ölçüldüğü kümenin bir kısmı eğitim verisiydi.* Bu kontrolün 40 koşusundan 15'i,
 eğitim satırlarının birebir kopyasıydı (v1'in probe kusuru — bkz. Sürüm notu). Temiz bir
-probe kümesiyle aynı kontrol **0.740 ± 0.028** veriyor. Düşüşün tamamını bu kusura yazmıyoruz:
-içinde (a) örneklem-içi satırların çıkması, (b) yeni tohumlar, (c) tek yerine 20 model tohumu
-üzerinden ortalama alınması var ve bunlar ayrıştırılmadı.
+probe kümesiyle aynı kontrol **0.740 ± 0.028** veriyor.
+
+Düşüşle birlikte üç şey birden değişmişti — örneklem-içi satırların çıkması, yeni tohumlar
+(1–10 → 11–20) ve tek model tohumu yerine 20 tohum ortalaması — bu yüzden −0.185 ayrıştırıldı:
+
+| kaynak | katkı |
+|---|---|
+| ezberlenmiş probe satırları | **−0.251** |
+| yeni tohumlar (aynı konfigler) | +0.070 |
+| tek yerine 20 orman ortalaması | +0.006 |
+| açıklanmayan (etkileşim) | −0.009 |
+
+**Düzeltmeyle birlikte gelen iki değişiklik sayıyı yukarı itiyor; aşağı çeken tek şey kusurun
+kendisi.** Kontrol, ayrıştırmayı varsayıma bırakmıyor: eski bloğun `ddos na=2` kolunun 10
+tohumundan 5'i eğitilmiş, 5'i eğitilmemişti. Aynı konfigürasyon, aynı ormanlar, tek fark
+satırın fit'te olup olmaması — **eğitilenler 1.000, eğitilmeyenler 0.650**, yani ezberin
+şişirmesi +0.350. Tam ezberli `dos` kolu da (10/10 eğitilmiş) 1.000'den temiz ölçümde
+**0.455**'e düşüyor.
+
+*(Kolların ikisi yeni blokta 1.000'e dayandığı için tohum terimi tavana karşı ölçülüyor;
+onu ölçülmüş bir etki değil, 20 koşuluk gürültünün üst sınırı olarak okuyun. İşareti her
+hâlükârda pozitif. Hesap: `my-work/day10-22072026-disaggregation/`.)*
 
 *İkincisi ve daha önemlisi, kontrolün kendi tasarımı hatalıydı* — aşağıdaki ölçümler bunu
 gösteriyor. Kaldı ki 0.740'ın kendisi de tek bir sayı olarak yanıltıcı: **çöküşün tamamı
