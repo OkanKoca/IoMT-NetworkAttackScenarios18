@@ -76,61 +76,93 @@ def fig_mitm_curve(res):
 
 
 def fig_topology():
-    """Schematic: AP-centred infrastructure Wi-Fi, node roles, victim path and the relay
-    interception, plus the imaging congestion source. Not to scale -- laid out for reading."""
-    fig, ax = plt.subplots(figsize=(9.6, 6.4))
-    ax.set_xlim(0, 10.4), ax.set_ylim(0.2, 7.3), ax.axis("off")
-    # positions (schematic; separated so no two node circles overlap)
-    pos = {
-        "AP": (5.0, 3.5),
-        "STA0\nhasta monitörü": (1.9, 5.6),
-        "STA2\nEKG kaynağı": (1.9, 1.4),
-        "STA8\nSALDIRGAN / relay": (8.5, 3.5),
-        "STA1\ntelefon / geçit": (4.3, 6.5),
-        "STA7\ngörüntüleme": (8.5, 6.1),
-        "STA3-6\nventilatör/oksimetre/\nNIBP/pompa": (8.6, 1.1),
-        "Hexoskin\n(BLE)": (6.6, 6.5),
-    }
-    roles = {  # node -> fill colour
-        "AP": "#e8edf0", "STA0\nhasta monitörü": "#dCE7ee", "STA2\nEKG kaynağı": "#dCE7ee",
-        "STA8\nSALDIRGAN / relay": "#f2ddc7", "STA1\ntelefon / geçit": "#e8edf0",
-        "STA7\ngörüntüleme": "#e8edf0", "STA3-6\nventilatör/oksimetre/\nNIBP/pompa": "#eef2f4",
-        "Hexoskin\n(BLE)": "#eef2f4",
-    }
-    for name, (x, y) in pos.items():
-        edge = AMBER if "SALDIRGAN" in name else ("#3a6b86" if "monitör" in name or "EKG" in name else "#9fb0ba")
-        ax.add_patch(Circle((x, y), 0.62, facecolor=roles[name], edgecolor=edge,
-                            lw=2.0 if "SALDIRGAN" in name else 1.2, zorder=3))
-        ax.text(x, y, name, ha="center", va="center", fontsize=8.2, color=INK, zorder=4)
+    """Detailed schematic: AP-centred infrastructure Wi-Fi with every application flow drawn and
+    specified (rate/packet/port). Diagram shows structure; the table below carries the numbers.
+    Flow specs are from iomt-noise.h + IoMT-wifi_wip.cc. Not to scale -- laid out for reading."""
+    # (src, dst, role, rate, packet, port, category)
+    flows = [
+        ("STA2", "STA0", "EKG dalga formu (kurban)", "128 kbps", "128 B", "8080", "victim"),
+        ("STA3", "STA0", "ventilatör", "64 kbps", "128 B", "8110", "bg"),
+        ("STA4", "STA0", "pals oksimetre", "8 kbps", "64 B", "8120", "bg"),
+        ("STA5", "STA1", "NIBP tansiyon manşonu", "2 kbps", "64 B", "8130", "bg"),
+        ("STA6", "STA1", "infüzyon pompası", "16 kbps", "64 B", "8140", "bg"),
+        ("STA7", "STA1", "görüntüleme / video geçidi", "~19 Mbps", "1200 B", "8150", "imaging"),
+        ("HEX", "STA1", "telefon telemetrisi (BLE)", "64 kbps", "128 B", "9090", "bg"),
+        ("STA8", "STA0", "SALDIRI: relay araya girer", "grey p / mitm d", "—", "7070", "attack"),
+    ]
+    label = {"AP": "AP\nHealthNet_24G", "STA0": "STA0\nhasta monitörü", "STA1": "STA1\ntelefon/geçit",
+             "STA2": "STA2\nEKG kaynağı", "STA3": "STA3\nventilatör", "STA4": "STA4\noksimetre",
+             "STA5": "STA5\nNIBP", "STA6": "STA6\npompa", "STA7": "STA7\ngörüntüleme",
+             "STA8": "STA8\nSALDIRGAN", "HEX": "Hexoskin\n(giyilebilir)"}
+    catcol = {"victim": BLUE, "bg": "#b7c2c9", "imaging": "#7f8c94", "attack": AMBER}
+    pos = {"AP": (6.0, 4.0), "STA0": (2.4, 6.4), "STA2": (2.4, 1.6), "STA8": (9.9, 4.0),
+           "STA1": (5.4, 7.2), "HEX": (7.7, 7.1), "STA7": (9.9, 6.6),
+           "STA3": (9.9, 1.4), "STA4": (7.9, 0.9), "STA5": (1.7, 4.0), "STA6": (3.6, 7.0)}
 
-    def arrow(a, b, color, style="-", lw=2, rad=0.0, z=2):
+    fig = plt.figure(figsize=(11.8, 9.6))
+    gs = fig.add_gridspec(2, 1, height_ratios=[2.35, 1.0], hspace=0.18)
+    ax = fig.add_subplot(gs[0]); ax.set_xlim(0, 12), ax.set_ylim(0, 8), ax.axis("off")
+
+    def arrow(a, b, color, style="-", lw=2, rad=0.0, z=2, alpha=1.0):
         (x0, y0), (x1, y1) = pos[a], pos[b]
         ax.add_patch(FancyArrowPatch((x0, y0), (x1, y1), connectionstyle=f"arc3,rad={rad}",
-                     arrowstyle="-|>", mutation_scale=14, color=color, lw=lw,
-                     linestyle=style, shrinkA=24, shrinkB=24, zorder=z))
+                     arrowstyle="-|>", mutation_scale=12, color=color, lw=lw, alpha=alpha,
+                     linestyle=style, shrinkA=22, shrinkB=22, zorder=z))
 
-    # normal victim path: STA2 -> AP -> STA0 (blue)
-    arrow("STA2\nEKG kaynağı", "AP", BLUE, rad=0.05)
-    arrow("AP", "STA0\nhasta monitörü", BLUE, rad=0.05)
-    # attack: relay interception STA2 -> STA8(relay) -> STA0 (amber dashed, via AP conceptually)
-    arrow("STA2\nEKG kaynağı", "STA8\nSALDIRGAN / relay", AMBER, style=(0, (5, 3)), rad=-0.25)
-    arrow("STA8\nSALDIRGAN / relay", "STA0\nhasta monitörü", AMBER, style=(0, (5, 3)), rad=-0.25)
-    # imaging congestion: STA7 -> AP (muted, thick); light background devices -> AP (faint)
-    arrow("STA7\ngörüntüleme", "AP", "#9fb0ba", lw=3, rad=0.0)
-    arrow("STA3-6\nventilatör/oksimetre/\nNIBP/pompa", "AP", "#cdd6db", lw=1.2, rad=0.0)
-    arrow("Hexoskin\n(BLE)", "STA1\ntelefon / geçit", "#9fb0ba", lw=1.5)
+    # background + imaging flows first (behind), each src -> AP -> dst through the hub
+    for src, dst, _l, _r, _p, _pt, cat in flows:
+        if cat in ("bg", "imaging"):
+            lw = 3.4 if cat == "imaging" else 1.3
+            arrow(src, "AP", catcol[cat], lw=lw, rad=0.05, z=1, alpha=0.85)
+            arrow("AP", dst, catcol[cat], lw=lw, rad=0.05, z=1, alpha=0.85)
+    # victim path STA2 -> AP -> STA0 (blue, on top)
+    arrow("STA2", "AP", BLUE, lw=2.6, rad=0.07, z=3)
+    arrow("AP", "STA0", BLUE, lw=2.6, rad=0.07, z=3)
+    # attack: relay interception STA2 -> STA8 -> STA0 (amber dashed)
+    arrow("STA2", "STA8", AMBER, style=(0, (5, 3)), lw=2.2, rad=-0.30, z=3)
+    arrow("STA8", "STA0", AMBER, style=(0, (5, 3)), lw=2.2, rad=-0.30, z=3)
+    ax.text(4.0, 3.05, "128 kbps · 128 B\nport 8080", color=BLUE, fontsize=8.3, ha="center", zorder=5)
+    ax.text(7.7, 5.7, "~19 Mbps · 1200 B\ntıkanıklık sürücüsü", color="#5f6c74", fontsize=8.3, ha="center", zorder=5)
+    ax.text(9.9, 2.75, "tutar (MITM d)\nveya düşürür (grey p)", color=AMBER, fontsize=8.0, ha="center", zorder=5)
 
-    # legend
+    for name, (x, y) in pos.items():
+        attacker, victim = name == "STA8", name in ("STA0", "STA2")
+        fill = "#f2ddc7" if attacker else ("#dbe7ee" if victim else ("#e4ebef" if name == "AP" else "#eef2f4"))
+        edge = AMBER if attacker else ("#3a6b86" if victim else "#9fb0ba")
+        ax.add_patch(Circle((x, y), 0.66, facecolor=fill, edgecolor=edge,
+                            lw=2.2 if attacker else 1.2, zorder=4))
+        ax.text(x, y, label[name], ha="center", va="center", fontsize=7.9, color=INK, zorder=5)
+
     from matplotlib.lines import Line2D
-    leg = [Line2D([0], [0], color=BLUE, lw=2, label="kurban yolu (EKG): STA2→AP→STA0"),
-           Line2D([0], [0], color=AMBER, lw=2, ls="--", label="saldırı: relay araya girer (grey/MITM)"),
-           Line2D([0], [0], color="#9fb0ba", lw=3, label="tıkanıklık: görüntüleme ~19 Mbps")]
-    ax.legend(handles=leg, loc="lower center", frameon=False, ncol=1,
-              bbox_to_anchor=(0.5, -0.02), fontsize=9)
-    ax.set_title("IoMT Wi-Fi topolojisi: roller, kurban yolu ve relay araya girmesi\n"
-                 "(altyapı modu — her akış AP üzerinden geçer)", fontsize=12, color=INK)
-    fig.tight_layout()
-    fig.savefig(FIGS / "fig_topology.png", bbox_inches="tight")
+    leg = [Line2D([0], [0], color=BLUE, lw=2.4, label="kurban yolu (EKG) — ölçülen tek yol"),
+           Line2D([0], [0], color=AMBER, lw=2.2, ls="--", label="saldırı: relay araya girer (grey/MITM)"),
+           Line2D([0], [0], color="#7f8c94", lw=3.4, label="görüntüleme ~19 Mbps (tıkanıklık)"),
+           Line2D([0], [0], color="#b7c2c9", lw=1.3, label="hafif arka plan cihazları")]
+    ax.set_title("IoMT Wi-Fi topolojisi ve trafik akışları — altyapı modu, her akış AP üzerinden STA→AP→STA",
+                 fontsize=12.5, color=INK, pad=6)
+
+    axt = fig.add_subplot(gs[1]); axt.axis("off")
+    rows = [[l, f"{s} → {d}", r, p, pt] for s, d, l, r, p, pt, _c in flows]
+    cats = [c for *_, c in flows]
+    tab = axt.table(cellText=rows, colLabels=["akış", "kaynak → hedef", "hız", "paket", "port"],
+                    loc="center", cellLoc="left", colWidths=[0.34, 0.18, 0.17, 0.10, 0.09])
+    tab.auto_set_font_size(False); tab.set_fontsize(9.0); tab.scale(1, 1.5)
+    for (r, c), cell in tab.get_celld().items():
+        cell.set_edgecolor("#dce3e7")
+        if r == 0:
+            cell.set_facecolor("#eef2f4"); cell.set_text_props(weight="bold", color=INK)
+        else:
+            cat = cats[r - 1]
+            cell.set_facecolor({"victim": "#eaf2f8", "attack": "#fbeede", "imaging": "#f0f2f4"}.get(cat, "white"))
+            if c == 0:
+                cell.get_text().set_color(catcol[cat])
+                cell.get_text().set_weight("bold" if cat in ("victim", "attack") else "normal")
+    axt.set_title("Uygulama akışlarının tam dökümü  (arka plan her koşuda rastgele alt küme; "
+                  "görüntüleme her zaman açık)", fontsize=9.5, color=MUTED, y=1.0)
+    fig.legend(handles=leg, loc="lower center", ncol=4, frameon=False, fontsize=8.6,
+               bbox_to_anchor=(0.5, 0.01))
+    fig.subplots_adjust(bottom=0.10)
+    fig.savefig(FIGS / "fig_topology.png", bbox_inches="tight", dpi=150)
     plt.close(fig)
 
 

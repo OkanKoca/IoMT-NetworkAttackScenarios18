@@ -6,4 +6,4 @@ out/
 out_probes/
 manifest.csv
 manifest_probes.csv
-sweep.log
+sweep*.log

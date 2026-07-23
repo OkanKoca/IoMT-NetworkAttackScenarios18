@@ -107,7 +107,12 @@ BLACKHOLE_INTENSITY = 1.0                        # single point (= grey-hole p=1
 # low delay is byte-identical to grey p=0, so training it risks turning greyhole (F1
 # 0.944) into a confusable pair -- the same failure that dos<->ddos already has.
 # delay=0 is absent on purpose: it IS grey p=0, measured below as the relay baseline.
-MITM_DELAYS_MS = [1, 2, 5, 10, 20, 50, 100, 200]
+# The 30/40/70/150 points were added after the tagged retrain (option b): with the probe
+# rule (trainable = d>=20) the original grid gave only 4 config-groups {20,50,100,200}, and
+# a grouped-CV fold that held d=20 alone collapsed MITM F1 to 0.18. The extra points double
+# the trainable groups to 8 AND map the typing knee, which the tag put between d=20 (typed
+# 0.10) and d=50 (typed 1.00). Still probes: sub-20 stays an evaluation-only stealth region.
+MITM_DELAYS_MS = [1, 2, 5, 10, 20, 30, 40, 50, 70, 100, 150, 200]
 MITM_SEEDS = 10
 # RELAY BASELINE. grey p=0 = an on-path relay that drops nothing. Not a training class
 # (its behaviour is indistinguishable from doing nothing, so it cannot carry an attack

@@ -178,41 +178,52 @@ timing axis) with an explicitly characterised limit (the delivery axis stays con
 
 ## Six-class detector, MITM promoted to a trained class (Q1a, `mitm_sixclass.py`)
 
-No new sweep: the MITM probes already exist, so promoting MITM to a sixth trained class (d>=20,
-the probe rule) is an analysis step on the existing tagged data.
+Promoting MITM to a sixth trained class (d>=20, the probe rule) needs no new sweep for the first
+pass. A first pass showed the estimate was under-sampled, so **option (b) was then run**: a light
+40-run top-up added d=30,40,70,150, doubling the trainable config-groups from 4 to 8 and mapping
+the typing knee. The table below is post-top-up (335 runs).
 
 | class | P | R | F1 (tag) | F1 (tag-free) | n |
 |---|---|---|---|---|---|
-| normal | 0.705 | 0.775 | 0.738 | 0.692 | 40 |
-| dos | 0.706 | 0.686 | 0.696 | 0.721 | 70 |
-| ddos | 0.600 | 0.480 | 0.533 | 0.622 | 25 |
-| greyhole | 0.915 | 0.973 | 0.943 | 0.918 | 110 |
+| normal | 0.711 | 0.800 | 0.753 | 0.732 | 40 |
+| dos | 0.641 | 0.586 | 0.612 | 0.652 | 70 |
+| ddos | 0.448 | 0.520 | 0.481 | 0.528 | 25 |
+| greyhole | 0.919 | 0.927 | 0.923 | 0.910 | 110 |
 | blackhole | 0.909 | 1.000 | 0.952 | 0.952 | 10 |
-| mitm | 0.886 | 0.775 | **0.827** | 0.810 | 40 |
+| mitm | 0.960 | 0.900 | **0.929** | 0.909 | 80 |
 
-macro-F1 0.782 (tag) vs 0.786 (tag-free): promoting MITM does not move the headline, and MITM
-lands at a healthy 0.827 without cannibalising grey-hole (0.943). The confusion matrix
-(`figs/fig_confusion.png`) shows the two expected leaks: ddos->dos (10, the equal-volume overlap)
-and **mitm->greyhole (9, the sub-threshold hold read as a delivery attack)**.
+macro-F1 0.775 (tag) vs 0.781 (tag-free): promoting MITM does not move the headline, and with the
+top-up MITM lands at a solid **0.929** without cannibalising grey-hole (0.923). The confusion
+matrix (`figs/fig_confusion.png`) shows the two expected leaks: ddos->dos (the equal-volume
+overlap) and **mitm->greyhole (the sub-threshold hold read as a delivery attack)**.
 
-**The MITM curve reads clean, and it flags option (b).** Detection is saturated at 1.00 for every
-`d` (relay presence, as expected); correct *typing* as MITM steps up sharply at `d≈50`
-(`figs/fig_mitm_curve.png`): 0.10 at d<=20, 1.00 at d>=50. Below the knee the hold is too small
-to separate from a benign/grey relay, so it is typed greyhole -- the thesis, on the timing axis.
+**The MITM curve locates the knee precisely.** Detection is saturated at 1.00 for every `d`
+(relay presence, as expected); correct *typing* as MITM is 0.10-0.20 at d<=20 and jumps to **1.00
+at d>=30** (`figs/fig_mitm_curve.png`). So a timing-MITM is reliably typeable once its hold
+exceeds ~30 ms; below that the hold is inside the benign/grey-relay footprint and is typed
+greyhole -- the thesis, on the timing axis.
 
-But the per-fold MITM F1 is fragile: **[1.0, 0.952, 1.0, 0.182]** across the four folds that
-carry MITM. With only 4 config-groups (d=20,50,100,200), one fold holds d=20 alone -- the weak
-config -- and collapses. So the 0.827 is real but under-sampled. **This is what triggers option
-(b):** a light top-up of a few `d` values in [20,200] (esp. near the 20-50 knee) to give more
-config-groups and firm up the estimate -- ~40 runs, not a heavy sweep.
+**Option (b) firmed up the estimate and revealed the residual is a real limit, not sampling.**
+Per-fold MITM F1 went from **[1.0, 0.952, 1.0, 0.182]** (4 groups, one fold collapsing on d=20
+alone) to **[1.0, 0.976, 1.0, 0.909, 0.333]** (8 groups, 5/5 folds). The remaining weak fold is
+the one holding d=20 -- which sits exactly on the knee (typed 0.20), so a 20 ms hold genuinely
+straddles benign and malicious. That is a finding, not an artefact more seeds would remove.
 
 ## Figures (`figs/`)
 
-* `fig_topology.png` -- schematic of the AP-centred infrastructure Wi-Fi: node roles, the victim
-  ECG path (STA2->AP->STA0), the relay interception (STA8), and the imaging congestion source.
+* `fig_topology.png` -- detailed schematic of the AP-centred infrastructure Wi-Fi: every node's
+  role, **every application flow drawn and specified in a table (rate / packet / port)**, the
+  victim ECG path (STA2->AP->STA0), the relay interception (STA8), the imaging congestion source.
 * `fig_confusion.png` -- the 6-class confusion matrix above.
-* `fig_mitm_curve.png` -- MITM detection (saturated) vs correct typing (knee at d~50).
+* `fig_mitm_curve.png` -- MITM detection (saturated) vs correct typing (knee at d~30).
 
-A NetAnim animation of a DoS run (`netanim/network-anim_dos.xml`, regenerable, gitignored) can be
-opened in the NetAnim viewer for a packet-level view of the flood; PyViz is unavailable (the
-build has Python bindings off).
+## NetAnim (`netanim/`)
+
+The full scenarios are **unwatchable** in NetAnim: a realistic ward run emits ~90k wireless events
+(every frame is an expanding circle, ~3000/s -- a swarm) and leaves the AP and Hexoskin stacked at
+the origin. NetAnim launches fine (the issue is not the viewer); it just does not scale to this
+traffic density. `IoMT-netanim-demo.cc` is a purpose-built lightweight demo that fixes both: explicit
+spread positions, colour-coded + named nodes (victim blue, attacker orange), and low constant rates
+(~580 events/s) so individual packets are visible and the flood visibly outpaces the victim. Build
+it into ns-3 scratch, run it -> `netanim-demo.xml`, open in the NetAnim viewer (built at
+`~/Downloads/ns-allinone-3.40/netanim-3.109/NetAnim`). PyViz is unavailable (Python bindings off).
