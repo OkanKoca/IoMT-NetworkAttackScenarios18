@@ -203,6 +203,36 @@ def _victim_startup_lag(flows):
     return (last["t_first_rx"] - source["t_first_tx"]) * 1000.0
 
 
+def _read_timing(xml_path):
+    """Read the victim-path end-to-end delay sidecar written next to the XML by the sweep.
+
+    The stamp-based delay (iomt-timing.h) is measured BELOW the flow layer, so it cannot
+    live in FlowMonitor's XML; run_sweep captures the one ReportTiming line into
+    <prefix>.timing. This is the measurement victim_startup_lag_ms only ESTIMATES: that
+    feature spans first-tx to first-rx (one noisy sample per run, tracking ~half the hold),
+    while this is the true source-stamp-to-monitor delay, one sample per delivered packet.
+
+    Returns (delivered_n, mean, median, p95) in ms. A fully denied path reports n=0 with no
+    delay samples -- delivered_n=0 is kept as signal and the three delay statistics are NaN
+    (there is no packet to time), matching the victim-path missingness convention used by the
+    other timing features. A MISSING sidecar (an older, un-instrumented sweep) yields all NaN,
+    so the columns carry no information rather than a wrong zero.
+    """
+    path = (xml_path[:-4] if xml_path.endswith(".xml") else xml_path) + ".timing"
+    if not os.path.exists(path):
+        return float("nan"), float("nan"), float("nan"), float("nan")
+    tok = {}
+    with open(path) as fh:
+        for part in fh.read().split():
+            if "=" in part:
+                k, v = part.split("=", 1)
+                tok[k] = v.replace("ms", "")
+    n = float(tok.get("n", "nan"))
+    if not (n > 0):  # n==0 (denied path) or missing token: no packet to time
+        return (0.0 if n == 0 else float("nan")), float("nan"), float("nan"), float("nan")
+    return n, float(tok.get("mean", "nan")), float(tok.get("median", "nan")), float(tok.get("p95", "nan"))
+
+
 def run_features(flows, meta):
     """Reduce a run's flows to one labeled run-level feature vector (3 modalities)."""
     total_tx = sum(f["tx"] for f in flows)
@@ -275,6 +305,14 @@ def main():
         for f in flows:
             flow_rows.append({"run_id": run_id, **meta, **f})
         row = run_features(flows, meta)
+        # True end-to-end victim-path delay from the stamp sidecar (see _read_timing). These
+        # sit alongside victim_startup_lag_ms rather than replacing it: the retrain decides
+        # which timing signal the detector keeps.
+        e2e_n, e2e_mean, e2e_med, e2e_p95 = _read_timing(xml_path)
+        row["e2e_delay_mean_ms"] = e2e_mean
+        row["e2e_delay_median_ms"] = e2e_med
+        row["e2e_delay_p95_ms"] = e2e_p95
+        row["e2e_delivered_n"] = e2e_n
         # A NaN delivery_ratio means a broken run (no monitor tx: crashed sim, wrong port,
         # early termination), not a real 0% delivery. Surface it loudly with the offending
         # file so it can be investigated rather than silently poisoning the feature vector.

@@ -176,8 +176,11 @@ SCENARIOS = {
 
 # Shared headers the scenarios #include. Copied into scratch/ alongside the .cc
 # files (a scratch source finds a header in its own directory), so per-run noise
-# lives in one place instead of being duplicated across the five scenarios.
-SHARED_HEADERS = ["iomt-noise.h"]
+# AND the victim-path timing stamp each live in one place instead of being
+# duplicated across the scenarios. iomt-timing.h must be listed here: a scenario
+# that #includes it would otherwise build against whatever stale copy happened to
+# be left in scratch/, silently decoupling the sweep from the authored header.
+SHARED_HEADERS = ["iomt-noise.h", "iomt-timing.h"]
 
 # One planned run: what build_dataset.py needs (scenario/intensity/run) plus how to
 # launch it (target binary + CLI args). The manifest and the job list both derive from these.
@@ -242,18 +245,35 @@ def run_job(job):
         (pcap, network-anim*.xml) land in isolation and cannot clobber each other;
       * the FlowMonitor XML we keep is written to an absolute --output path in raw/.
     Idempotent: an existing XML is skipped (unless force) so an interrupted sweep resumes.
+
+    rawdir is passed in the job tuple rather than read from the module global RAW: under
+    the forkserver start method (Python 3.14's default on Linux) workers re-import this
+    module fresh, so a RAW reassigned in main() for --outroot would NOT reach them and they
+    would resolve outputs against the default sweep dir. Threading it through the job makes
+    the output location explicit and start-method-independent.
     """
-    target, name, extra_args, force = job
-    out_prefix = os.path.join(RAW, name)
+    target, name, extra_args, force, rawdir = job
+    out_prefix = os.path.join(rawdir, name)
     if not force and os.path.exists(out_prefix + ".xml"):
         return (name, "skip")
     env = dict(os.environ, LD_LIBRARY_PATH=BUILD_LIB)
     cmd = [binary_path(target), *extra_args, f"--output={out_prefix}"]
     with tempfile.TemporaryDirectory(prefix="ns3run_") as cwd:
         proc = subprocess.run(cmd, cwd=cwd, env=env,
-                              stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if proc.returncode != 0:
         return (name, "FAIL", proc.stderr.decode(errors="replace"))
+    # Persist the victim-path end-to-end delay (iomt-timing.h's ReportTiming line) into a
+    # sidecar next to the XML. FlowMonitor's XML cannot carry it -- the stamp is measured
+    # BELOW the flow layer -- so the sweep captures stdout and keeps the one line
+    # build_dataset parses. n=0 (a fully denied path, e.g. blackhole) is a real value and is
+    # written verbatim; absence of the line (an un-instrumented binary) leaves no sidecar,
+    # which build_dataset reads as "no timing", not as zero delay.
+    for line in proc.stdout.decode(errors="replace").splitlines():
+        if line.startswith("End-to-end delay"):
+            with open(out_prefix + ".timing", "w") as fh:
+                fh.write(line + "\n")
+            break
     return (name, "ok")
 
 
@@ -347,12 +367,24 @@ def write_manifest(specs):
 
 
 def main():
+    global RAW, MANIFEST, MANIFEST_PROBES
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="print the planned runs, no side effects")
     ap.add_argument("--force", action="store_true", help="re-run even if the XML exists")
     ap.add_argument("--jobs", type=int, default=4,
                     help="parallel workers (default 4; use 1 for serial/debug, fewer to cap RAM)")
+    ap.add_argument("--outroot", default=None,
+                    help="relocate raw/ + both manifests under this dir, leaving a frozen "
+                         "sweep's outputs untouched (the experiment branch writes here)")
     args = ap.parse_args()
+
+    # Redirect all outputs under --outroot so a regeneration cannot overwrite a frozen sweep's
+    # raw XMLs or manifests. The scenario BUILD (scratch copy + compile) is shared regardless,
+    # which is intended: the experiment wants the newly instrumented binaries.
+    if args.outroot:
+        RAW = os.path.abspath(os.path.join(args.outroot, "raw"))
+        MANIFEST = os.path.abspath(os.path.join(args.outroot, "manifest.csv"))
+        MANIFEST_PROBES = os.path.abspath(os.path.join(args.outroot, "manifest_probes.csv"))
 
     specs = build_specs()
     n_train = sum(1 for s in specs if s.split == "train")
@@ -369,7 +401,7 @@ def main():
         binary_path(s.target)
     write_manifest(specs)
 
-    jobs = [(s.target, s.name, s.extra_args, args.force) for s in specs]
+    jobs = [(s.target, s.name, s.extra_args, args.force, RAW) for s in specs]
     n_ok = n_skip = 0
     fails = []
     with Pool(args.jobs) as pool:

@@ -100,3 +100,78 @@ leaves timing alone, MITM does the reverse. Ablation on the frozen model already
 naming a relay run `greyhole` leans on the timing features (0.90 with them, 0.50
 without) while detection does not -- so a cleaner timing axis is the part with room to
 move.
+
+## Results (full sweep + retrain, 2026-07-23)
+
+The instrumented scenarios were swept in full (625 runs, `sweep/`, isolated from the
+frozen `raw/` and dataset) and rebuilt with the true e2e delay added as three columns
+(`e2e_delay_{median,mean,p95}_ms`). Reproduced by `isolate_tag.py`.
+
+**The instrumentation is neutral to the baseline.** The 285-row tagged training set lands
+the honest grouped-CV macro-F1 at **0.786**, byte-for-byte the frozen `v1.1` figure
+(0.786-0.787) -- so the header + the DataRate compensation in `iomt-noise.h` did not move
+the calibration.
+
+**The stamp makes the hold a real axis.** Class medians of the new e2e delay vs the old
+one-sample estimate (ms):
+
+| class | e2e_median | old `startup_lag` |
+|---|---|---|
+| normal | 2.07 | 9.15 |
+| benign relay (p=0) | 6.20 | 29.48 |
+| grey-hole (all p) | 4.47 | 29.48 |
+| mitm d<20 | 12.87 | 30.28 |
+| mitm d>=20 | **99.54** | 83.98 |
+
+The old estimate put the benign relay, the grey-hole and the low MITM at an identical
+~30 ms; the stamp ranks them and pushes the real timing attack (99.5 ms) clear.
+
+**But the tag fixes the timing confusion only, not the headline.** Two retrains:
+
+*B. MITM trained as a class, benign relay held out as the control:*
+
+| | macro-F1 | benign relay called 'mitm' | called 'greyhole' | any attack |
+|---|---|---|---|---|
+| tag-free | 0.786 | 0.47 | 0.42 | 1.00 |
+| tag | 0.782 | **0.03** | 0.88 | 0.97 |
+
+The tag all but eliminates the benign-relay-as-MITM error (0.47 -> 0.03), and lifts MITM
+F1 (0.810 -> 0.827) and grey-hole F1 (0.918 -> 0.943). It does **not** lower how often the
+benign relay is flagged at all (1.00 -> 0.97): the alarm simply moves from `mitm` to
+`greyhole`. Macro-F1 is unchanged.
+
+*Position control.* The far benign relay (STA8) genuinely loses packets -- delivery median
+0.878, min 0.000 (bimodal, some seeds lose the first burst) -- so its any-attack rate is
+0.97. A near benign relay (STA5, delivery 0.954) is flagged 0.72. Part of the residual is
+therefore distance-induced loss reading as a mild grey-hole; part is not (even the clean
+relay is flagged more often than not).
+
+*C. Option 1 literal -- a detector whose negative class IS the benign relay, positive the
+malicious relay, position fixed at STA8:*
+
+| | benign false alarm | grey-hole recall | mitm recall |
+|---|---|---|---|
+| tag-free | 0.45 | 0.96 | 0.93 |
+| tag | 0.38 | 0.88 | 0.95 |
+
+Even given a benign-relay category to sort into and the tag, ~40% of benign relays are
+still called malicious, because a benign on-path relay's involuntary loss is
+mechanistically identical to a mild grey-hole. The tag helps the mechanism it was built
+for (mitm recall 0.93 -> 0.95) and slightly hurts the one it is irrelevant to (grey-hole
+0.96 -> 0.88).
+
+### Verdict
+
+The tag delivers a real, bounded contribution and **refines the project's central finding
+rather than overturning it**:
+
+> Flow-based detection reads the *mechanism* a relay imposes on the victim path -- added
+> delay, lost packets -- not its *intent*. Instrumenting the true end-to-end delay turns
+> the timing mechanism into a genuine intensity axis and stops a benign relay from being
+> mistaken for a timing-MITM. It cannot separate a benign relay from a delivery attack,
+> because an honest on-path relay produces real packet loss (extra hop, distance) that is
+> indistinguishable from a mild grey-hole. The false alarm is relocated from the timing
+> class to the delivery class, not removed.
+
+This is the honest, partly-unfavourable result: a defensible methods contribution (the
+timing axis) with an explicitly characterised limit (the delivery axis stays confounded).
