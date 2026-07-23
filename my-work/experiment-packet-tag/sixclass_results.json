@@ -1,0 +1,159 @@
+{
+  "macro_tag": 0.7814766069870457,
+  "macro_free": 0.786051283790886,
+  "n_runs": 295,
+  "classes": [
+    "normal",
+    "dos",
+    "ddos",
+    "greyhole",
+    "blackhole",
+    "mitm"
+  ],
+  "confusion": [
+    [
+      31,
+      9,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      13,
+      48,
+      8,
+      1,
+      0,
+      0
+    ],
+    [
+      0,
+      10,
+      12,
+      0,
+      1,
+      2
+    ],
+    [
+      0,
+      1,
+      0,
+      107,
+      0,
+      2
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      10,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      9,
+      0,
+      31
+    ]
+  ],
+  "per_class": {
+    "normal": {
+      "precision": 0.7045454545454546,
+      "recall": 0.775,
+      "f1-score": 0.7380952380952381
+    },
+    "dos": {
+      "precision": 0.7058823529411765,
+      "recall": 0.6857142857142857,
+      "f1-score": 0.6956521739130435
+    },
+    "ddos": {
+      "precision": 0.6,
+      "recall": 0.48,
+      "f1-score": 0.5333333333333333
+    },
+    "greyhole": {
+      "precision": 0.9145299145299145,
+      "recall": 0.9727272727272728,
+      "f1-score": 0.9427312775330396
+    },
+    "blackhole": {
+      "precision": 0.9090909090909091,
+      "recall": 1.0,
+      "f1-score": 0.9523809523809523
+    },
+    "mitm": {
+      "precision": 0.8857142857142857,
+      "recall": 0.775,
+      "f1-score": 0.8266666666666667
+    }
+  },
+  "mitm_fold_f1": [
+    1.0,
+    0.9523809523809523,
+    1.0,
+    0.18181818181818182
+  ],
+  "curve": [
+    {
+      "d": 1.0,
+      "n": 10,
+      "trained": false,
+      "detect": 1.0,
+      "typed_mitm": 0.1
+    },
+    {
+      "d": 2.0,
+      "n": 10,
+      "trained": false,
+      "detect": 1.0,
+      "typed_mitm": 0.1
+    },
+    {
+      "d": 5.0,
+      "n": 10,
+      "trained": false,
+      "detect": 1.0,
+      "typed_mitm": 0.1
+    },
+    {
+      "d": 10.0,
+      "n": 10,
+      "trained": false,
+      "detect": 1.0,
+      "typed_mitm": 0.2
+    },
+    {
+      "d": 20.0,
+      "n": 10,
+      "trained": true,
+      "detect": 1.0,
+      "typed_mitm": 0.1
+    },
+    {
+      "d": 50.0,
+      "n": 10,
+      "trained": true,
+      "detect": 1.0,
+      "typed_mitm": 1.0
+    },
+    {
+      "d": 100.0,
+      "n": 10,
+      "trained": true,
+      "detect": 1.0,
+      "typed_mitm": 1.0
+    },
+    {
+      "d": 200.0,
+      "n": 10,
+      "trained": true,
+      "detect": 1.0,
+      "typed_mitm": 1.0
+    }
+  ]
+}

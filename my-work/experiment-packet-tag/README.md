@@ -175,3 +175,44 @@ rather than overturning it**:
 
 This is the honest, partly-unfavourable result: a defensible methods contribution (the
 timing axis) with an explicitly characterised limit (the delivery axis stays confounded).
+
+## Six-class detector, MITM promoted to a trained class (Q1a, `mitm_sixclass.py`)
+
+No new sweep: the MITM probes already exist, so promoting MITM to a sixth trained class (d>=20,
+the probe rule) is an analysis step on the existing tagged data.
+
+| class | P | R | F1 (tag) | F1 (tag-free) | n |
+|---|---|---|---|---|---|
+| normal | 0.705 | 0.775 | 0.738 | 0.692 | 40 |
+| dos | 0.706 | 0.686 | 0.696 | 0.721 | 70 |
+| ddos | 0.600 | 0.480 | 0.533 | 0.622 | 25 |
+| greyhole | 0.915 | 0.973 | 0.943 | 0.918 | 110 |
+| blackhole | 0.909 | 1.000 | 0.952 | 0.952 | 10 |
+| mitm | 0.886 | 0.775 | **0.827** | 0.810 | 40 |
+
+macro-F1 0.782 (tag) vs 0.786 (tag-free): promoting MITM does not move the headline, and MITM
+lands at a healthy 0.827 without cannibalising grey-hole (0.943). The confusion matrix
+(`figs/fig_confusion.png`) shows the two expected leaks: ddos->dos (10, the equal-volume overlap)
+and **mitm->greyhole (9, the sub-threshold hold read as a delivery attack)**.
+
+**The MITM curve reads clean, and it flags option (b).** Detection is saturated at 1.00 for every
+`d` (relay presence, as expected); correct *typing* as MITM steps up sharply at `d≈50`
+(`figs/fig_mitm_curve.png`): 0.10 at d<=20, 1.00 at d>=50. Below the knee the hold is too small
+to separate from a benign/grey relay, so it is typed greyhole -- the thesis, on the timing axis.
+
+But the per-fold MITM F1 is fragile: **[1.0, 0.952, 1.0, 0.182]** across the four folds that
+carry MITM. With only 4 config-groups (d=20,50,100,200), one fold holds d=20 alone -- the weak
+config -- and collapses. So the 0.827 is real but under-sampled. **This is what triggers option
+(b):** a light top-up of a few `d` values in [20,200] (esp. near the 20-50 knee) to give more
+config-groups and firm up the estimate -- ~40 runs, not a heavy sweep.
+
+## Figures (`figs/`)
+
+* `fig_topology.png` -- schematic of the AP-centred infrastructure Wi-Fi: node roles, the victim
+  ECG path (STA2->AP->STA0), the relay interception (STA8), and the imaging congestion source.
+* `fig_confusion.png` -- the 6-class confusion matrix above.
+* `fig_mitm_curve.png` -- MITM detection (saturated) vs correct typing (knee at d~50).
+
+A NetAnim animation of a DoS run (`netanim/network-anim_dos.xml`, regenerable, gitignored) can be
+opened in the NetAnim viewer for a packet-level view of the flood; PyViz is unavailable (the
+build has Python bindings off).
