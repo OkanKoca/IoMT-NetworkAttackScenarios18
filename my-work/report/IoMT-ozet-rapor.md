@@ -13,14 +13,15 @@ Bu verinin zamanında ve eksiksiz ulaşması klinik bir gerekliliktir.
 
 Bu cihazlara güvenlik yazılımı eklemek çoğunlukla mümkün değildir: donanımları sınırlıdır ve
 klinik sertifikasyon süreçleri yazılımlarına müdahaleyi engeller. Dolayısıyla savunma **ağ
-tarafında** kurulmalıdır — cihazlara dokunmadan, yalnızca ürettikleri trafiğe bakarak.
+tarafında** kurulmalıdır: cihazlara dokunmadan, yalnızca ürettikleri trafiğe bakarak.
 
-**Bu çalışmanın sorusu:** ağ trafiğinin ölçülebilir özelliklerinden (teslim oranı, throughput,
-gecikme, akış sayısı) bir saldırının varlığı ve türü anlaşılabilir mi?
+**Bu çalışmanın sorusu:** ağ trafiğinin paket akışlarına dair ölçülebilir özelliklerinden
+(teslim oranı, throughput, gecikme, akış sayısı) bir saldırının varlığı ve türü anlaşılabilir
+mi?
 
-Gerçek bir hastane ağında kontrollü saldırı denemesi yapılamayacağı için çalışma **NS-3 ağ
-simülatöründe** yürütülmüştür. Simülasyonun karşılığı, gerçek bir ölçümün veremeyeceği iki
-şeydir: her koşunun etiketi kesindir, ve her koşu birebir tekrar üretilebilir.
+Çalışma **NS-3 ağ simülatöründe** yürütülmüştür. Simülasyonun karşılığı, gerçek bir ölçümün
+veremeyeceği iki şeydir: her koşunun etiketi kesindir (labeled data), ve her koşu birebir
+tekrar üretilebilir.
 
 ## 2. Teslim edilenler
 
@@ -33,47 +34,45 @@ simülatöründe** yürütülmüştür. Simülasyonun karşılığı, gerçek bi
 
 ## 3. Kurulan sistem
 
-**Simüle edilen ağ.** 9 Wi-Fi istasyonu, bir erişim noktası ve bir giyilebilir sensör.
+**Simüle edilen ağ:** 9 Wi-Fi istasyonu, bir erişim noktası ve bir giyilebilir sensör.
 Çalışmanın merkezindeki akış, bir EKG dalga formunun hasta başı monitörüne ulaşmasıdır
-(128 kbps, 128 baytlık paketler — gerçek klinik telemetri profili). Arka planda dört tıbbi
-cihaz ve bir görüntüleme geçidi trafiği vardır.
+(128 kbps, 128 baytlık paketler – gerçeğe yakın klinik telemetri profili). Arka planda dört
+tıbbi cihaz ve bir görüntüleme geçidi trafiği vardır.
 
-**İki tasarım kararı sonuçların tamamını etkilemiştir.**
+**İki tasarım kararı sonuçların tamamını etkilemiştir:**
 
 *Taban gürültüsü kalibre edildi.* Devralınan simülasyon belirlenimliydi: saldırı olmayan
-koşularda teslim oranı **tam olarak 1.0**, koşular arası varyans **sıfır**. Böyle bir tabanda
-en küçük bozulma bile sonsuz anlamlı görünür; model yüksek skor alır ama bu skor ağın değil
-kurulumun yapaylığını ölçer. Ağa gerçekçi bir gürültü tabanı kazandırılmıştır (teslim oranı
-artık 0.970 ± 0.032).
+koşularda teslim oranı **tam olarak 1.0**, koşular arası varyans **sıfır**. Varyansı sıfır
+olan bir tabanda her ayrım yapay biçimde keskinleşir; model yüksek skor alır ama bu skor ağın
+değil kurulumun yapaylığını ölçer. Bundan dolayı ağa daha gerçekçi bir gürültü tabanı
+kazandırılmıştır (teslim oranı artık 0.970 ± 0.032).
 
-Bu kalibrasyon sırasında beklenmedik bir bulgu çıkmıştır: kablosuz bağlantıya hata enjekte
-etmek teslim oranını hiç hareket ettirmemektedir, çünkü 802.11'in MAC katmanı bozulan
-çerçeveyi yeniden gönderir. Teslim oranını gerçekten düşürebilen tek mekanizma
-**tıkanıklıktır** — dolu bir kuyruktan atılan paketin yeniden gönderilecek bir kopyası
-yoktur. Arka plan yükü bu nedenle doyum noktasının iki yanına düşecek biçimde ölçülerek
-seçilmiştir.
+![Şekil 1 — Taban kalibrasyonu. Solda: devralınan simülasyonda 40 saldırısız koşunun 37'si tam olarak 1.0 teslim oranı veriyor, yani taban hiç oynamıyor; kalibrasyondan sonra koşular bir aralığa yayılıyor. Sağda: aynı kusurun ikinci yüzü, devralınan tabanda akış sayısı her koşuda 2 olduğu için "ikiden çok akış = saldırı" bedava bir bayraktı.](../day8-16072026-stage2-calibration/figs/S2-taban-karsilastirma.png)
+
+Bu kalibrasyon sırasında beklenmedik bir bulgu ortaya çıktı: hata enjekte etmek teslim oranını
+hiç hareket ettirmemektedir, çünkü 802.11'in MAC katmanı bozulan çerçeveyi yeniden gönderir
+(ARQ). Teslim oranını düşürebilen tek mekanizma **tıkanıklıktır** (congestion): dolu kuyruktan
+atılan paketin yeniden gönderilecek kopyası yoktur. Arka plan yükü bu nedenle doyum noktasının
+(saturation) iki yanına düşecek biçimde ölçülerek seçilmiştir.
 
 *Örneklem birimi koşudur, akış değil.* Veri setinin her satırı bir simülasyon koşusudur ve o
 koşudaki bütün akışların özetini taşır. Sebep: "bu ağda saldırı var mı" sorusu tek bir akışa
-bakılarak yanıtlanamaz — DDoS'un tanımı zaten birden çok akışın birlikte davranmasıdır. Ayrıca
-bu seçim, "aynı koşunun verisi hem eğitimde hem testte olmasın" kuralının ihlalini **yapısal
-olarak imkânsız** kılar.
+bakılarak yanıtlanamaz; DDoS'un tanımı zaten birden çok akışın birlikte davranmasıdır. Ayrıca
+bu seçim, "aynı koşunun verisi hem eğitimde hem testte olmasın" kuralının ihlalini baştan
+imkânsız kılar.
 
 **Model.** Tek bir çok-sınıflı Random Forest; koşu başına 13 sayısal girdi. "Saldırı var mı"
 sorusu ayrı bir model değil, çok-sınıflı çıktının türevidir (`normal` dışındaki her tahmin bir
 alarmdır), böylece iki çıktının birbiriyle çelişmesi mümkün değildir.
 
-**Değerlendirme.** Şiddet ekseni olan saldırılarda (`dos`, `ddos`, `greyhole`) aynı ayarın
-bütün koşuları eğitim/test bölmesinin **tek bir tarafında** tutulmuştur. Sonuç: model test
-edilirken **daha önce hiç görmediği bir saldırı şiddetiyle** karşılaşır. Bu sınav, rastgele
-bölmeye göre skoru 0.828'den 0.788'e düşürmektedir.
-
-`normal` ve `blackhole` bu kuralın dışındadır ve bunun sebebi zorunludur: taranacak bir
-şiddet parametreleri, dolayısıyla tek bir konfigürasyonları vardır. Hepsi tek grup sayılsaydı
-sınıf tek bir kata yığılır, kalan dört katta hiç örneği bulunmazdı. Bu iki sınıfta grup
-koşunun kendisidir. Pratik sonucu, aşağıdaki tablonun okunmasını değiştirir: `greyhole`'ün
-0.958'i **görülmemiş bir şiddetle**, `blackhole`'ün 0.952'si ise eğitimde görülmüş tek
-konfigürasyonla ölçülmüştür. İkisi aynı zorlukta sınav değildir.
+**Değerlendirme.** Şiddet ekseni (intensity) olan saldırılarda (`dos`, `ddos`, `greyhole`)
+aynı ayarın bütün koşuları eğitim/test bölmesinin **tek bir tarafında** tutulmuştur. Sonuç:
+model test edilirken **daha önce hiç görmediği bir saldırı şiddetiyle** karşılaşır. Bu test,
+rastgele bölmeye göre skoru 0.828'den 0.788'e düşürmektedir. `normal` ve `blackhole` bu
+kuralın dışındadır: taranacak bir şiddet parametreleri, dolayısıyla birden fazla
+konfigürasyonları yoktur. Tek grup sayılsalardı sınıf tek bir kata (fold) yığılır, kalan dört
+katta hiç örneği bulunmazdı; bu iki sınıfta grup koşunun kendisidir. Sonucu §5'te
+belirtilmiştir.
 
 ## 4. Kaynak çalışmanın doğrulanması
 
@@ -90,14 +89,15 @@ senaryosunun çalıştığının kanıtı hatasız derlenmesi değil, ürettiği
 | Blackhole | akışlar normalle aynı, **kayıp 0** — filtre L2 adresi ile L3 adresi karşılaştırıyor | hiçbir şey düşürmüyor |
 | MQTT-flood | koşulmadı (kaynağı derlenmeyen `blocksec` klasöründe); yayımlanmış çıktısı `normal` ile özdeş | dolaylı olarak etkisiz |
 
-Koşulabilen dört saldırıdan **yalnızca biri** amaçladığı etkiyi üretmektedir. Bozuk bir senaryodan üretilen veriyle
-eğitilen model, "saldırı" etiketli ama saldırı içermeyen koşular öğrenir. Bu nedenle senaryolar
-**yeniden yazılmıştır**; kaynaktan devralınan şey topoloji, trafik deseni ve saldırı kurma
-kalıplarıdır.
+Koşulabilen dört saldırıdan **yalnızca biri** amaçladığı etkiyi üretmektedir. Bozuk bir
+senaryodan üretilen veriyle eğitilen model, "saldırı" etiketli ama saldırı içermeyen koşular
+öğrenir. Bu nedenle senaryolar **yeniden yazılmıştır**; kaynaktan devralınan şey topoloji,
+trafik deseni ve saldırı kurma kalıplarıdır.
 
 Aynı sonuç ikinci bir yoldan da doğrulanmıştır: kaynak çalışmanın yayımladığı ölçüm
-dosyalarından öznitelik çıkarıldığında, 60 koşu yalnızca **30 eşsiz vektör** vermektedir.
-`dos`, `ddos` ve `blackhole` 10 tohumun 10'unda da birbirinden **ayırt edilemez**; aynı şey
+dosyalarından öznitelik (feature) çıkarıldığında, 60 koşu yalnızca **30 eşsiz vektör**
+vermektedir. `dos`, `ddos` ve `blackhole` 10 tohumun (seed) 10'unda da birbirinden
+**ayırt edilemez**; aynı şey
 `mqtt` ile `normal` için de geçerlidir. Yani altı etiket, üç ölçüm. Bu kanıt senaryo kodu hiç
 okunmadan, yalnızca kaynağın kendi çıktılarından gelmektedir.
 
@@ -125,16 +125,19 @@ Saldırı F1 = **0.960**, yanlış alarm oranı **0.150**.
 
 *(Buradaki 0.797 **havuzlanmış** değerdir: beş katın bütün tahminleri tek bir tabloda
 toplanır ve sınıf başına metrikler bundan üretilir. Yukarıda ve sonuçta geçen 0.788 ise
-**kat ortalamasıdır** (± 0.094) ve sonucun ne kadar oynak olduğunu gösterir. İki sayı aynı
-tahminlerin iki farklı özetidir, çelişki değildir.)*
+**kat (fold) ortalamasıdır** (± 0.094) ve sonucun ne kadar oynak olduğunu gösterir. İki sayı
+aynı tahminlerin iki farklı özetidir, çelişki değildir. `blackhole` ve `normal` §3'teki grup
+kuralının dışında kaldığı için bu iki satır, diğer üçünün geçtiği "görülmemiş şiddet"
+sınavından geçmemiştir; birer üst sınır olarak okunmalıdır.)*
 
 Tablo ikiye ayrılıyor: **paket düşüren saldırılar güvenilir biçimde tanınıyor**, **hacim
-saldırıları tanınmıyor**. `dos` ve `ddos` çift yönlü karışmaktadır — bu, bir eşik sorunu değil
+saldırıları tanınmıyor**. `dos` ve `ddos` çift yönlü karışmaktadır; bu, bir eşik sorunu değil
 iki sınıfın öznitelik uzayında ayrışmadığı anlamına gelir (§7).
 
-![Şekil 1 — Karışıklık matrisi. Satır: gerçek sınıf, sütun: tahmin.](../day5-10072026-detector/figs/G-confusion-honest.png)
+![Şekil 2 — Karışıklık matrisi. Satır: gerçek sınıf, sütun: tahmin. Köşegen doğru cevaplar; `dos` ile `ddos` arasındaki karışma iki yönlüdür.](../day5-10072026-detector/figs/G-confusion-honest.png)
 
-**Tespit–şiddet eğrisi.** Saldırı zayıfladıkça tespitin nereye kadar dayandığı:
+**Tespit–şiddet (detection-intensity) eğrisi.** Saldırı zayıfladıkça tespitin nereye kadar
+dayandığı:
 
 | saldırı | şiddet | tespit |
 |---|---|---|
@@ -146,29 +149,29 @@ iki sınıfın öznitelik uzayında ayrışmadığı anlamına gelir (§7).
 | `greyhole` | `p` = 0.02 – 0.9 | 1.00 (hepsinde) |
 | `ddos` / `blackhole` | tüm şiddetler | 1.00 |
 
-Gerçek bir çöküş eğrisi olan tek kol `dos`'tur, ve o kol **tabana kadar inmektedir**. 10
-paket/s'de flood, tıkanmış ortamda meşru trafiğin kendi dalgalanmasının içinde kalmaktadır;
-2–5 paket/s'de tespit oranı yanlış-alarm tabanına oturur, yani model artık saldırıyı
-görmemekte, yalnızca saldırısız koşularda da yaptığı hatayı yapmaktadır. Bu noktada saldırının
-teslim oranında ve throughput'ta bıraktığı iz, `normal`'in kendi dalgalanmasının **onda biri**
-kadardır (−0.10 σ ve −0.04 σ).
+Çöküş gösteren tek kol `dos`'tur ve o kol **tabana kadar inmektedir**. 10 paket/s'de flood,
+tıkanmış ortamda meşru trafiğin kendi dalgalanmasının içinde kalmaktadır; 2–5 paket/s'de
+tespit oranı yanlış-alarm tabanına oturur, yani model saldırıyı görmemekte, yalnızca
+saldırısız koşularda da yaptığı hatayı yapmaktadır. Bu hızlarda saldırının teslim oranında ve
+throughput'ta bıraktığı iz, `normal`'in kendi dalgalanmasının **onda biri** kadardır
+(−0.10 σ ve −0.04 σ).
 
-Diğer üç kolun eğrisi düzdür — grey-hole, paketlerin yalnızca %2'sini düşürdüğünde bile
-kusursuz tespit edilmektedir.
+Diğer üç kolun eğrisi düzdür: grey-hole, paketlerin yalnızca %2'sini düşürdüğünde bile
+tespit edilmektedir. Bu düzlüğün sebebi §7'dedir.
 
-**Bu son cümle gerçek olamayacak kadar iyidir, ve nedeni bu çalışmanın asıl bulgusudur.**
+![Şekil 3 — Tespit–şiddet eğrisi, çalışmanın manşet çıktısı. Kesik çizgi yanlış-alarm tabanıdır (0.150); bir kol o çizgiye indiğinde model saldırıyı artık görmüyor demektir. Ortadaki panelde `dos` kolu tabana kadar iniyor, sağdaki ve soldaki kollar ise her şiddette tavanda kalıyor.](../day5-10072026-detector/figs/H-detection-vs-intensity-honest.png)
 
 ## 6. Yeni saldırı: grey-hole
 
-Kaynak çalışmanın bütün saldırıları gürültülüdür; yakalanmaları için makine öğrenmesine gerek
-yoktur. Eklenen saldırı **grey-hole**'dür: yol üzerindeki ele geçirilmiş bir düğüm, paketlerin
-tamamını değil `p` olasılıkla **bir kısmını** düşürür, gerisini iletir. Ağ çalışıyor görünmeye
-devam ettiği için sessizdir, ve `p` doğal bir şiddet ekseni verir.
+Kaynak çalışmanın bütün saldırıları fazla gürültülüdür; yakalanmaları için makine öğrenmesine
+gerek yoktur. Eklenen saldırı **grey-hole**'dür: yol üzerindeki ele geçirilmiş bir düğüm,
+paketlerin tamamını değil `p` olasılıkla **bir kısmını** düşürür, gerisini iletir. Ağ çalışıyor
+görünmeye devam ettiği için sessizdir, ve `p` doğal bir şiddet ekseni verir.
 
-**Kritik tasarım kararı:** saldırgan gerçekten yolun üzerinde olmalıdır. Kaynak çalışmanın
-blackhole'ü hiçbir paket düşürmemektedir çünkü saldırgan düğüm yönlendirme yolunda değildir —
+**Tasarım kararı:** saldırgan gerçekten yolun üzerinde olmalıdır. Kaynak çalışmanın
+blackhole'ü hiçbir paket düşürmemektedir çünkü saldırgan düğüm yönlendirme yolunda değildir;
 bu, geri çağrımı düzelterek çözülebilecek bir sorun değildir. Bu nedenle grey-hole, ağ yoluna
-fiilen yerleşen bir uygulama olarak yazılmıştır:
+fiilen yerleşen bir uygulama (relay) olarak yazılmıştır:
 
 ```
 EKG kaynağı  --UDP-->  grey-hole relay  --UDP-->  monitör
@@ -187,19 +190,16 @@ beklenen değerleri vermektedir:
 | 0.90 | 0.091 | 0.10 |
 | 1.00 | 0.000 | 0.00 |
 
-`p = 1` verildiğinde aynı kod **çalışan bir blackhole** olur — kaynak çalışmanın çalışmayan
+`p = 1` verildiğinde aynı kod **çalışan bir blackhole** olur, kaynak çalışmanın çalışmayan
 blackhole'ünün yerine geçen budur.
 
-Sınıflandırma tarafında grey-hole, veri setindeki **en güvenilir tanınan saldırı sınıfıdır**
-(F1 0.958).
+Sınıflandırma tarafında grey-hole veri setinde en yüksek F1'i almaktadır (0.958).
 
 ## 7. Asıl bulgu: detektör neyi ölçüyor?
 
-§5'teki rakamlar doğrudur, ama sordukları soru sanıldığı soru değildir.
-
 **Kontrol deneyi.** Grey-hole eğrisinin neden düz olduğunu anlamak için saldırı ağdan
-çıkarılıp **aracı yerinde bırakılmıştır**: gelen her paketi düşürmeden, geciktirmeden ileten
-bir aracı düğüm. Bu konfigürasyon hiç eğitilmemiş, yalnızca ölçülmüştür.
+çıkarılıp **aracı (relay) yerinde bırakılmıştır**: gelen her paketi düşürmeden, geciktirmeden
+ileten bir aracı düğüm. Bu konfigürasyon hiç eğitilmemiş, yalnızca ölçülmüştür.
 
 | ölçüm | değer |
 |---|---|
@@ -209,20 +209,20 @@ bir aracı düğüm. Bu konfigürasyon hiç eğitilmemiş, yalnızca ölçülmü
 | **saldırıya kalan pay** | **0.025** |
 
 **Hiçbir zararlı davranışı olmayan bir aracı, 40 koşunun 39'unda saldırı alarmı
-üretmektedir** — ve 36'sına özellikle `greyhole` demektedir.
+üretmektedir**; 36'sına özellikle `greyhole` demektedir.
+
+![Şekil 4 — Aracının kendi izi. Solda tespit uzayı: turuncu kesik çizgi aracı varken ama saldırı yokken ölçülen orandır (R₀ = 0.97), taralı alan saldırı sıfırken bile ödenen paydır, saldırıya kalan tavan payı yalnızca 0.03'tür. Sağda öznitelik uzayı: saldırı `p` ile teslim oranını gerçekten düşürmektedir, ama tespit kararı bundan çok önce doygunlaşmıştır.](../day5-10072026-detector/figs/L-relay-tabani.png)
 
 Aynı sonuç öznitelik uzayında da görülmektedir. Bu kez ölçülen şey tespit oranı değil
 **teslim oranıdır**; kurban yolu üç aşamada, üç kolun da paylaştığı tohumlar üzerinden:
 aracı yok **0.9754** → aracı var ama zararsız **0.9023** → aracı var ve saldırı açık
 **0.8953**. Yani düşüşün **%91'i aracının salt varlığından, %9'u saldırıdan** gelmektedir.
 
-**Sonuç:** detektörün fiilen yanıtladığı soru *"bu ağda beklenmedik bir aracı var mı?"*dır —
-*"bu aracı kötü niyetli mi?"* değil.
+**Sonuç:** detektörün fiilen yanıtladığı soru *"bu ağda beklenmedik bir aracı var mı?"*dır,
+*"bu aracı kötü niyetli mi?"* değil. Bunlar ayrı iki sorudur ve ayrı ölçülmelidir. Ayrım
+`normal`'e karşı değil **zararsız aracıya** karşı ölçüldüğünde:
 
-**Doğru soru sorulduğunda gerçek bir eğri ortaya çıkıyor.** Bu bir kusur değil, iki sorunun
-ayrılması gerektiğidir. Ayrım `normal`'e karşı değil **zararsız aracıya** karşı ölçüldüğünde:
-
-![Şekil 2 — Zararsız aracıya karşı ayrım. Taralı alan saldırının tabanın üstüne çıkan gerçek katkısıdır.](../day5-10072026-detector/figs/M-zararsiz-relaye-karsi-ayrim.png)
+![Şekil 5 — Zararsız aracıya karşı ayrım. Taralı alan saldırının tabanın üstüne çıkan gerçek katkısıdır.](../day5-10072026-detector/figs/M-zararsiz-relaye-karsi-ayrim.png)
 
 | `p` | tespitin taban üstüne çıkan payı |
 |---|---|
@@ -233,29 +233,31 @@ ayrılması gerektiğidir. Ayrım `normal`'e karşı değil **zararsız aracıya
 
 **Çöküş noktası `p = 0.1`'dir** ve aracının konumu değiştirildiğinde de aynı çıkmaktadır.
 
-**Aynı desen iki kez daha tekrar ediyor.** `ddos` sınıfı pratikte "saldırgan sayısı çok" değil
-**"hasar çok"** anlamına gelmektedir: gerçekleşen hasar eşitlendiğinde `dos`/`ddos` ayrımı
-0.662'den **0.475**'e düşmektedir (şans 0.500). Benzer biçimde, paketleri düşürmeyip geciktiren
-bir saldırı sınıf olarak eğitildiğinde model, **hiçbir şey yapmayan** aracıya koşuların
-%80'inde o saldırının adını vermektedir.
+**Aynı desen iki kez daha tekrar etmektedir.** `ddos` sınıfı pratikte "saldırgan sayısı çok"
+değil **"hasar çok"** anlamına gelmektedir: gerçekleşen hasar eşitlendiğinde `dos`/`ddos`
+ayrımı 0.662'den **0.475**'e düşmektedir (şans 0.500). Benzer biçimde, paketleri düşürmeyip
+geciktiren bir saldırı sınıf olarak eğitildiğinde model, **hiçbir şey yapmayan** aracıya
+koşuların %80'inde o saldırının adını vermektedir.
 
 **Üçünün ortak açıklaması:** akış seviyesinde ölçülen özet büyüklükler, saldırganın
-**niyetini** değil kullandığı **mekanizmayı** görür. Bu aynı zamanda "daha çok saldırı
-ekleyelim" önerisinin neden bilgi katmadığının cevabıdır: bu ölçüm düzeyinde UDP flood, MQTT
-flood ve sahte bir cihaz aynı olaydır.
+**niyetini** değil kullandığı **mekanizmayı** görür. Bu aynı zamanda daha fazla saldırı çeşidi
+eklemenin neden bilgi katmadığının cevabıdır: bu ölçüm düzeyinde UDP flood, MQTT flood ve
+sahte bir cihaz aynı olaydır.
 
 ## 8. Sınırlılıklar
 
-1. **İkili tespit doygundur** — ölçtüğü şey saldırı değil, aracının varlığıdır.
+1. **İkili tespit doygundur**, ölçtüğü şey saldırı değil, aracının varlığıdır.
 2. **Grey-hole `p < 0.1`'in altında görünmez.** Telemetrinin %2'sini düşüren bir saldırgan
    yakalanamamaktadır.
 3. **`dos`/`ddos` ayrımı güvenilir değildir**; bu model bu ayrım için kullanılmamalıdır.
-4. **Zamanlama saldırıları akış seviyesinde görünmez** — ölçüm katmanının yapısal kısıtı.
-5. **Rakamlar bu topolojiye özgüdür.** Aracının konumu yanlış-alarm tabanını 0.225 ile 0.350
+4. **`blackhole` ve `normal` skorları** görülmemiş şiddet sınavından geçmemiştir (§3, §5);
+   birer üst sınırdır.
+5. **Zamanlama saldırıları akış seviyesinde görünmez**, ölçüm katmanının yapısal kısıtıdır.
+6. **Rakamlar bu topolojiye özgüdür.** Aracının konumu yanlış-alarm tabanını 0.225 ile 0.350
    arasında değiştirmektedir. Taşınabilir olan yöntemdir, mutlak değerler değil.
-6. **Veri simülasyondur** ve trafik UDP'dir; gerçek IoMT telemetrisi çoğunlukla MQTT/TCP
+7. **Veri simülasyondur** ve trafik UDP'dir; gerçek IoMT telemetrisi çoğunlukla MQTT/TCP
    üzerinden akar.
-7. **Bu model üretimde kullanılmamalıdır.** Çalışmanın çıktısı bir ürün değil, bir ölçüm
+8. **Bu model üretimde kullanılmamalıdır.** Çalışmanın çıktısı bir ürün değil, bir ölçüm
    yöntemi ve o yöntemin ne ölçtüğüne dair bir soruşturmadır.
 
 ## 9. Sonuç
@@ -273,13 +275,4 @@ skoru **0.958**.
 deneyleridir**. Ağ yoluna yerleştirilmiş ama hiçbir zararlı davranışı olmayan bir aracının
 detektörü 40 koşunun 39'unda alarma geçirmesi, tespit edilen şeyin büyük ölçüde saldırı değil
 **ağ yapısındaki bir değişiklik** olduğunu göstermektedir. Soru doğru biçimde yeniden
-sorulduğunda ölçülebilir ve anlamlı bir çöküş eğrisi ortaya çıkmaktadır.
-
-**Bir sonraki adım**, detektörü baştan bu soruya göre kurmaktır: pozitif sınıf "zararlı
-aracı", negatif sınıf "zararsız aracı" — `normal` değil.
-
----
-
-*Bu belge, ayrıntılı teknik raporun özetidir. Raporda geçen her sayısal sonuç tek bir
-kaynaktan üretilmiştir ve elle kopyalanmamıştır. Kod, veri seti ve eğitilmiş model `v1.1`
-etiketiyle dondurulmuştur.*
+sorulduğunda ölçülebilir bir çöküş eğrisi ortaya çıkmaktadır.
