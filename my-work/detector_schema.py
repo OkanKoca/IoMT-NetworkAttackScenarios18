@@ -41,6 +41,20 @@ FEATURES = ["n_flows", "total_throughput_mbps", "max_flow_throughput_mbps",
 # What the model actually receives: FEATURES plus the missingness flag build_X derives.
 MODEL_INPUTS = FEATURES + ["monitor_missing"]
 
+# The instrumented variant (release v1.2) extends -- does not replace -- the passive
+# FEATURES with three columns derived from an end-to-end send timestamp the relay
+# preserves (see day9/freeze_instrumented.py). It is a different measurement modality
+# (cooperative, not passive), so it lives behind its own names and its own release
+# rather than mutating the canonical passive schema above.
+E2E_FEATURES = ["e2e_delay_median_ms", "e2e_delay_mean_ms", "e2e_delay_p95_ms"]
+INSTRUMENTED_FEATURES = FEATURES + E2E_FEATURES
+INSTRUMENTED_INPUTS = INSTRUMENTED_FEATURES + ["monitor_missing"]
+
+# The model inputs each released version is expected to carry, keyed by version. A
+# schema that matches itself proves nothing; check_against_release compares against the
+# manifest the model was actually shipped with (see below).
+_EXPECTED_INPUTS = {"v1": MODEL_INPUTS, "v1.1": MODEL_INPUTS, "v1.2": INSTRUMENTED_INPUTS}
+
 
 def build_X(frame, feats=None, allow_missing=()):
     """The model's input matrix, built the one way it is built anywhere.
@@ -84,11 +98,12 @@ def check_against_release(version="v1.1"):
         raise FileNotFoundError(f"no released manifest at {path}; freeze a release first")
     meta = json.loads(path.read_text())
     shipped = meta["model"]["features"]
-    if shipped != MODEL_INPUTS:
+    expected = _EXPECTED_INPUTS.get(version, MODEL_INPUTS)
+    if shipped != expected:
         raise ValueError(
             f"schema does not match release {version}.\n"
             f"  released: {shipped}\n"
-            f"  here    : {MODEL_INPUTS}\n"
+            f"  here    : {expected}\n"
             f"Every number computed from this schema would describe a model that was "
             f"never shipped. Reconcile before reporting anything.")
     return meta

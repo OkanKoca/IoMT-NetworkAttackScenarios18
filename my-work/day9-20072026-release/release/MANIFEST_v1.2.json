@@ -1,0 +1,69 @@
+{
+  "version": "v1.2",
+  "variant": "instrumented",
+  "canonical_release": "v1.1",
+  "frozen_on": "2026-07-24",
+  "git_commit": "4c32a7e07e14c422355f838d3e2e9ec7751c8803+dirty",
+  "measurement_note": "Not a passive flow-monitor model. Adds three columns derived from an application-layer send timestamp (SeqTsSizeHeader) that the victim stamps and the relay preserves. Assumes cooperative end-to-end instrumentation; a real timing-MITM could strip the header. v1.1 remains the canonical passive release.",
+  "dataset": {
+    "file": "dataset_v1.2.csv",
+    "sha256": "d8c6cc99f05ced11e2b695c91b79d9be349d321ba32866785c28bf77c11d07d6",
+    "rows": 365,
+    "class_distribution": {
+      "greyhole": 110,
+      "dos": 100,
+      "mitm": 80,
+      "normal": 40,
+      "ddos": 25,
+      "blackhole": 10
+    }
+  },
+  "probes": {
+    "file": "probes_v1.2.csv",
+    "sha256": "7b7dad8f18004f5a74fd6cba502c46797368d7bc351584612b3b83930e33e836",
+    "rows": 300,
+    "note": "evaluated only, never trained on (verified at freeze time)",
+    "overlap_check": "0 of 300 probe input vectors match any of 335 training input vectors"
+  },
+  "model": {
+    "file": "detector_v1.2_instrumented.joblib",
+    "sha256": "5a6a0a5a5a6d8a73c27b1350c48d59e8345fd204804c6ae7894a6675c4097d9a",
+    "estimator": "RandomForestClassifier(n_estimators=300, class_weight='balanced', random_state=0)",
+    "features": [
+      "n_flows",
+      "total_throughput_mbps",
+      "max_flow_throughput_mbps",
+      "max_flow_txpackets",
+      "flow_concentration",
+      "delivery_ratio",
+      "overall_loss_ratio",
+      "monitor_owd_ms",
+      "monitor_pdv_ms",
+      "mean_owd_ms",
+      "mean_pdv_ms",
+      "victim_startup_lag_ms",
+      "e2e_delay_median_ms",
+      "e2e_delay_mean_ms",
+      "e2e_delay_p95_ms",
+      "monitor_missing"
+    ],
+    "classes": [
+      "blackhole",
+      "ddos",
+      "dos",
+      "greyhole",
+      "mitm",
+      "normal"
+    ],
+    "training_rows": 335,
+    "mitm_promotion": "MITM runs at d>=20 ms trained as the sixth class; d<20 ms kept as an evaluation probe",
+    "excluded_from_training": "dos with intensity < 10 (kept as evaluation probe)",
+    "honest_eval": "mitm_sixclass.py / sixclass_results.json: grouped-CV macro-F1 0.775 (tag) vs 0.781 (tag-free); MITM F1 0.929; typing knee d~30 ms"
+  },
+  "environment": {
+    "python": "3.14.4",
+    "scikit_learn": "1.9.0",
+    "pandas": "3.0.3",
+    "joblib": "1.5.3"
+  }
+}

@@ -252,7 +252,11 @@ sahte bir cihaz aynı olaydır.
 3. **`dos`/`ddos` ayrımı güvenilir değildir**; bu model bu ayrım için kullanılmamalıdır.
 4. **`blackhole` ve `normal` skorları** görülmemiş şiddet sınavından geçmemiştir (§3, §5);
    birer üst sınırdır.
-5. **Zamanlama saldırıları akış seviyesinde görünmez**, ölçüm katmanının yapısal kısıtıdır.
+5. **Zamanlama saldırıları pasif akış ölçümünde görünmez**, bu pasif katmanın yapısal
+   kısıtıdır. Ölçüm uçtan-uca enstrümante edildiğinde (kurbanın bastığı, aracının koruduğu bir
+   gönderim damgası) körlük kalkar ve `mitm` altıncı bir sınıf olarak F1 0.929 ile ayrışır; bu
+   ayrı ve açıkça sınırlı bir **enstrümante varyant (v1.2)** olarak sunulur, kanonik pasif
+   modelin yerine geçmez.
 6. **Rakamlar bu topolojiye özgüdür.** Aracının konumu yanlış-alarm tabanını 0.225 ile 0.350
    arasında değiştirmektedir. Taşınabilir olan yöntemdir, mutlak değerler değil.
 7. **Veri simülasyondur** ve trafik UDP'dir; gerçek IoMT telemetrisi çoğunlukla MQTT/TCP

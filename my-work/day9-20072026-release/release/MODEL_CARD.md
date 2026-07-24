@@ -1,7 +1,11 @@
 # Model Kartı — IoMT Ağ-Saldırı Detektörü v1.1
 
-**Sürüm:** v1.1 · **Dondurulma:** 2026-07-21 · **Provenance:** `MANIFEST_v1.1.json`
+**Sürüm:** v1.1 (kanonik, pasif) · **Dondurulma:** 2026-07-21 · **Provenance:** `MANIFEST_v1.1.json`
 **Kaynak çalışma:** IoMT-NetworkAttackScenarios18 — Zenodo DOI `10.5281/zenodo.16747386`
+
+> **Bu kart kanonik pasif modeli (v1.1) anlatır.** Ayrıca, zamanlama saldırılarını uç cihaz
+> işbirliğiyle görebilen açıkça sınırlı bir **enstrümante varyant (v1.2)** vardır — v1.1'in
+> yerine geçmez, yanında durur; ayrıntısı §8'de.
 
 > **Bu kartın en önemli bölümü §5 (Sınırlılıklar).** Modelin skorları bağlamsız okunduğunda
 > yanıltıcıdır ve projenin ana bulgusu tam olarak budur. §5'i okumadan hiçbir rakamı aktarmayın.
@@ -264,6 +268,15 @@ olduğu için tespit değişmiyor.
 üçü de en düşük gecikmeyi "0 ms" diye anıyordu. Sweep'in en düşük gecikmesi 1 ms'dir; doğru
 çift yukarıdakidir.)*
 
+**Bu körlük ölçüm katmanının değil, PASİF ölçüm katmanının bir özelliğidir.** Yukarıdaki tablo
+bu kanonik (v1.1) modele aittir ve olduğu gibi geçerlidir. Ölçüm uç cihaz işbirliğiyle
+enstrümante edildiğinde — kurban uygulaması her pakete bir gönderim damgası basıp aracı bu
+damgayı koruduğunda — tutma süresi gerçek bir eksene dönüşüyor ve `mitm` altıncı bir eğitim
+sınıfı olarak F1 = **0.929** ile ayrışıyor, zararsız-relay'i `mitm` sanma hatası **0.47 → 0.03**
+çöküyor. Bu, ayrı ve açıkça sınırlı bir artefakt olarak dondurulmuştur: enstrümante varyant
+**v1.2** (aşağıda §8). Genel macro-F1'i değiştirmediği (0.775 tag / 0.781 tag-free) ve pasif
+olmayan bir varsayıma dayandığı için v1.1'in yerine geçmez, onun yanında durur.
+
 ### 5.5 Rakamlar bu topolojiye özgü
 
 Relay'in konumu sonuçları belirgin şekilde değiştiriyor: erişim noktasına yakın konumda
@@ -375,7 +388,9 @@ bir dosyanın dondurulan dosya olduğunu kanıtlar, üzerindeki notun doğru old
 | Ham XML üretimi | `run_sweep.py --jobs 6` |
 | XML → veri seti | `build_dataset.py --manifest manifest.csv --outdir out` |
 | XML → prob kümesi | `build_dataset.py --manifest manifest_probes.csv --outdir out_probes` |
-| Dondurma | `freeze_release.py --version v1.1` |
+| Dondurma (kanonik, pasif) | `freeze_release.py --version v1.1` |
+| Dondurma (enstrümante varyant) | `freeze_instrumented.py --version v1.2` |
+| v1.2 dürüst değerlendirme | notebook `day5-.../11-enstrumante-varyant-v1.2.ipynb` (kaynağı: `experiment-packet-tag/mitm_sixclass.py`) |
 | Rapor rakamları | `report_numbers.py` |
 
 **Uyarı — bu zincir commit'li ağaçtan olduğu gibi çalışmaz.** Ara çıktı klasörleri (`raw/`,
@@ -388,7 +403,53 @@ Değerlendirme notebook'ları: `my-work/day5-10072026-detector/01–10`. Raporda
 `my-work/report_numbers.json`'dan gelir; o dosyayı üreten betik bu kartla aynı şemayı ve aynı
 dondurulmuş sürümü kullanır.
 
-## 8. Atıf
+## 8. Enstrümante varyant (v1.2) — iki katmanlı sonuç
+
+v1.1 pasif akış-izlemeye dayanır: hiçbir cihaz işbirliği yapmaz, hiçbir pakete dokunulmaz —
+gerçek dünyada bir switch port aynasından trafiği seyretmenin karşılığı. §5.4 bu katmanın
+zamanlama saldırılarına kör olduğunu gösteriyor. v1.2 o körlüğü **ölçüm modalitesini
+değiştirerek** ele alır ve tam da bu yüzden ayrı bir sürümdür, v1.1'in devamı değil.
+
+**Ne ekliyor.** Kurban uygulaması her pakete bir `SeqTsSizeHeader` (gönderim zaman damgası)
+basar; aracı, paketi iletirken bu başlığı **korur** (eski hali başlığı silen taze bir paket
+üretiyordu). Monitörde `Simulator::Now() − damga` her teslim edilen paket için gerçek uçtan-uca
+gecikmeyi verir — aracının tuttuğu süre dahil. Bundan üç öznitelik türetilir
+(`e2e_delay_{median,mean,p95}_ms`), pasif 12 özniteliğin **üzerine** eklenir.
+
+**Ne kazandırıyor, ne kazandırmıyor** (dürüst config-grupli değerlendirme, notebook
+`11-enstrumante-varyant-v1.2.ipynb`; yayımlanan v1.2 modeliyle tutarlılığı notebook içinde
+assert'lenir):
+
+| | tag'siz (pasif) | tag'li (enstrümante) |
+|---|---|---|
+| macro-F1 | 0.781 | 0.775 |
+| `mitm` F1 | 0.810 | **0.929** |
+| zararsız relay'e `mitm` denme | 0.47 | **0.03** |
+| zararsız relay'e herhangi bir atak denme | 1.00 | 0.97 |
+
+Damga **genel detektörü yükseltmiyor** (macro-F1 aynı) — yaptığı, zamanlama karışıklığını
+çözmek: `mitm`'i tiplenebilir kılıyor ve zararsız-relay'i `mitm` sanma hatasını eziyor. Ama
+yanlış-alarmı silmiyor, yalnız `mitm` sınıfından `greyhole` sınıfına **taşıyor** (1.00 → 0.97):
+yol üstü zararsız bir aracının istemsiz paket kaybı, hafif bir grey-hole'den mekanik olarak
+ayrılamaz. Bu, ölçülmüş ve açıkça kaydedilmiş bir sınırdır.
+
+**Tespit–şiddet eğrisi.** Tespit her `d`'de doygun (aracının salt varlığı, §5.1); doğru
+*tipleme* olarak `mitm` denme oranı d≤20 ms'de 0.10–0.20, **d≥30 ms'de 1.00**. Yani bir
+zamanlama-MITM, tutması ~30 ms'yi aştığında güvenilir biçimde tiplenebiliyor; altında tutma
+zararsız/grey aracının izinin içinde kalıp `greyhole` tipleniyor — ana tez, zamanlama ekseninde.
+
+**Varsayımı ve neden ayrı tutulduğu.** e2e damgası pasif değildir: uç cihazların damga
+basmasını, dahası aracının başlığı korumasını varsayar. Gerçek bir timing-MITM başlığı silip
+atabilirdi. Bu yüzden v1.2 kanonik headline değil, **açıkça sınırı belirlenmiş bir metod
+katkısıdır**; v1.1 pasif tespit çerçevesini olduğu gibi bırakır.
+
+**Artefaktlar.** `detector_v1.2_instrumented.joblib` (6 sınıf, 16 girdi),
+`dataset_v1.2.csv` (365 koşu), `probes_v1.2.csv` (300 koşu), `MANIFEST_v1.2.json`. Aynı
+provenance kapısıyla korunur (prob seti eğitilmemiştir; MITM d≥20 eğitime, d<20 proba ayrılır).
+Üreten: `freeze_instrumented.py`. Sayıların kaynağı: notebook `11-enstrumante-varyant-v1.2.ipynb`
+(→ `11-sixclass-results.json`).
+
+## 9. Atıf
 
 Bu çalışma, aşağıdaki çalışmanın senaryolarını temel alır ve onun atıflanmasını gerektirir:
 

@@ -130,9 +130,12 @@ Dördü de üretilmiştir. Kısaca:
 - **Yeni saldırı.** Ağ yoluna gerçekten yerleşen, paketleri `p` olasılığıyla düşüren bir
   **grey-hole** relay'i gerçeklenmiştir. `p` doğal bir şiddet ekseni verir ve tespit–şiddet
   eğrisi bunun üzerine kurulmuştur. İkinci bir saldırı, paketleri düşürmeyip **geciktiren**
-  bir *timing-MITM*, de gerçeklenmiş, fakat sınıf olarak modele dahil edilmemiştir; sebebi
-  bir başarısızlık değil, ölçüm katmanının yapısal bir körlüğüdür ve kendi başına bir bulgudur
-  (§7).
+  bir *timing-MITM*, de gerçeklenmiş, fakat kanonik (pasif) modele sınıf olarak dahil
+  edilmemiştir; sebebi bir başarısızlık değil, **pasif** ölçüm katmanının yapısal bir
+  körlüğüdür ve kendi başına bir bulgudur (§7). Ölçüm uçtan-uca enstrümante edildiğinde bu
+  körlük kalkmakta ve `mitm` altıncı bir eğitim sınıfı olarak ayrışmaktadır (F1 0.929); bu, ayrı
+  ve açıkça sınırlı bir **enstrümante varyant (v1.2)** olarak sunulur, kanonik detektörün yerine
+  geçmez (§7.4.1).
 
 ### 1.5 Raporun asıl iddiası
 
@@ -1107,7 +1110,7 @@ süresini ölçülen aralığın içine aldığı için saldırıyı gerçekten 
 
 Değer tekdüze artmaktadır, yani ölçüm düzeltilmiştir.
 
-**Buna rağmen `mitm` bir eğitim sınıfı yapılmamıştır.** Sebep iki ölçümdür:
+**Pasif modelde `mitm` yararlı bir eğitim sınıfı olamaz.** Sebep iki ölçümdür:
 
 1. **Tespit eğrisi doğduğu gibi ölüdür.** Gecikme 1 ms'den 200 ms'ye çıkarken tespit sabit
    **1.00** kalmaktadır; 80 koşunun 80'i de `greyhole` olarak işaretlenmektedir. Eğri
@@ -1119,11 +1122,52 @@ Değer tekdüze artmaktadır, yani ölçüm düzeltilmiştir.
    gelmektedir.
 
 İkinci ölçüm belirleyicidir: **yüksek F1'in kendisi, modelin yanlış şeyi öğrendiğinin
-delilidir.** Sınıfı eğitim setine eklemek `greyhole`'ü (F1 0.958) karıştırılabilir bir çifte
-dönüştürürdü, `dos`↔`ddos`'ta yaşanan başarısızlığın aynısı.
+delilidir.** Sınıfı bu haliyle eğitim setine eklemek `greyhole`'ü (F1 0.958) karıştırılabilir
+bir çifte dönüştürürdü, `dos`↔`ddos`'ta yaşanan başarısızlığın aynısı. Kanonik detektör (v1.1)
+bu nedenle beş sınıflı bırakılmıştır ve zamanlama-MITM orada **bir saldırı sınıfı olarak değil,
+pasif akış ölçümünün yapısal sınırının kanıtı olarak** durmaktadır (§8.4).
 
-Zamanlama-MITM bu nedenle **bir saldırı sınıfı olarak değil, akış seviyesi ölçümün yapısal
-sınırının kanıtı olarak** sunulmaktadır; §8.4'te ana bulguyla birleştirilmektedir.
+#### 7.4.1 İki katmanlı çözüm: ölçümü enstrümante etmek
+
+Yukarıdaki körlük ölçümün genel bir kusuru değil, **pasif** ölçümün bir özelliğidir: FlowMonitor
+ağı dışarıdan seyreder, hiçbir cihaz işbirliği yapmaz. Tutmayı gerçekten ölçmenin yolu ölçüm
+modalitesini değiştirmektir. NS-3 gönderim zaman damgasını uçtan uca zaten taşır; yapılan iş onu
+yok etmeyi durdurmaktır: kurban uygulaması her pakete bir `SeqTsSizeHeader` basar, aracı paketi
+iletirken bu başlığı **korur** (eski hali başlığı silen sıfır dolgulu taze bir paket üretiyordu),
+ve monitörde `Now() − damga` her teslim edilen paket için gerçek uçtan-uca gecikmeyi verir —
+aracının tuttuğu süre dahil. Bundan üç öznitelik türetilir (`e2e_delay_{medyan,ortalama,p95}`).
+
+Damga tutmayı gerçek bir eksene çevirmektedir. Koşu-medyanları (ms, hepsi aynı istatistik):
+zararsız relay 6.2, grey-hole 4.5, düşük MITM (d<20) 12.9, gerçek zamanlama-MITM (d≥20)
+medyanı **~82** (tutma büyüdükçe 30 → 226 ms arasında tekdüze yükselerek). Eski tek-örnekli
+tahmin (`victim_startup_lag_ms`) ilk üçünü aynı ~30 ms'ye koyuyordu; damga onları sıralayıp
+asıl saldırıyı ayırıyor. Bununla `mitm` altıncı bir eğitim sınıfı yapıldığında:
+
+| | tag'siz (pasif) | tag'li (enstrümante) |
+|---|---|---|
+| makro-F1 | 0.781 | 0.775 |
+| `mitm` F1 | 0.810 | **0.929** |
+| zararsız relay'e `mitm` denme | 0.47 | **0.03** |
+
+Tipleme eğrisi dizi tam olarak buluyor: doğru `mitm` tipleme oranı d≤20 ms'de 0.10–0.20,
+**d≥30 ms'de 1.00**. Yani bir zamanlama-MITM, tutması ~30 ms'yi aştığında güvenilir biçimde
+tiplenmekte; altında tutma zararsız/grey aracının izinin içinde kalıp `greyhole` tiplenmektedir
+— ana tez, artık zamanlama ekseninde ölçülmüş olarak.
+
+![Şekil 8 — Enstrümante varyant (v1.2): zamanlama-MITM'in tespit ve doğru-tipleme oranı, eklenen tutma süresine göre. Tespit her tutmada doygun (aracının salt varlığı); doğru tipleme yalnız tutma ~30 ms'yi aştığında sıçrıyor. Altında tutma zararsız/grey aracının izinin içinde kalıp greyhole tipleniyor.](../day5-10072026-detector/figs/Q-mitm-curve-instrumented-v1.2.png)
+
+**Ama bu tez'i çürütmez, keskinleştirir.** Damga makro-F1'i **yükseltmemektedir** (0.775 ≈
+0.781); yaptığı, zamanlama karışıklığını çözmektir. Yanlış-alarmı da silmez, yalnız `mitm`
+sınıfından `greyhole` sınıfına **taşır** (zararsız relay'e herhangi bir atak denme oranı 1.00 →
+0.97): yol üstü zararsız bir aracının istemsiz paket kaybı, hafif bir grey-hole'den mekanik
+olarak ayrılamaz. Ve e2e damgası **pasif değildir** — uç cihazların damga basmasını, dahası
+aracının başlığı korumasını varsayar; gerçek bir timing-MITM başlığı silebilirdi.
+
+Bu nedenle sonuç ayrı ve açıkça sınırlı bir artefakt olarak dondurulmuştur: **enstrümante
+varyant v1.2** (6 sınıf, 16 girdi). Kanonik pasif detektör v1.1 olduğu gibi kalır; v1.2 onun
+yerine geçmez, "ölçümü kooperatif olarak enstrümante edersek zamanlama ekseni görünür hale
+gelir, ama pasif tespit çerçevesi bunu göremez" bulgusunu somutlaştırır. İkisi §8.4'te ana
+bulguyla birleştirilmektedir.
 
 ### 7.5 Değerlendirilip reddedilen alternatifler
 
@@ -1357,7 +1401,11 @@ anlamına gelirdi.
 |---|---|
 | `greyhole` | "ağ yolunda bir aracı var" |
 | `ddos` | "çok hasar var" |
-| `mitm` (eğitildiğinde) | "paket düşürmeyen bir aracı var" |
+| `mitm` (pasif ölçümle eğitildiğinde) | "paket düşürmeyen bir aracı var" |
+
+Son satır **pasif** ölçüme aittir; ölçüm uçtan-uca enstrümante edildiğinde bu değişir ve `mitm`
+gerçek tutma süresini okur (§7.4.1). Bu, tablonun ana açıklamasını çürütmez, kapsamını netleştirir:
+körlük ölçümün genel değil, pasif katmanın özelliğidir.
 
 Ortak açıklama şudur: **akış seviyesinde ölçülen özet büyüklükler, saldırganın niyetini değil
 kullandığı mekanizmayı görür.** Bir öznitelik vektörü "bu düğüm kötü niyetliydi" bilgisini
@@ -1368,8 +1416,9 @@ Bunun doğrudan bir sonucu, "daha çok saldırı ekleyelim" önerisinin neden bi
 Akla gelen diğer IoMT saldırıları da bu üç eksene düşmektedir: sahte cihaz = bir akış fazla,
 tekrarlama saldırısı = hacim artışı, pil tüketme = hiçbir şey. Flow tabanlı bir detektör için
 UDP flood, MQTT flood ve sahte cihaz **aynı şeydir**. Bilgi katan tek ekleme, boş bir eksene
-düşendir, zamanlama-MITM'in eklenme sebebi tam olarak buydu (§7.4), ve o eksende de ölçümün
-kendisinin kör olduğu ortaya çıktı.
+düşendir, zamanlama-MITM'in eklenme sebebi tam olarak buydu (§7.4), ve o eksende **pasif**
+ölçümün kör olduğu ortaya çıktı — ölçüm uçtan-uca enstrümante edildiğinde eksen görünür hale
+gelmekte (§7.4.1), ama bu artık pasif tespit olmamaktadır.
 
 Bu, çalışmanın ana bulgusudur: **bir detektörün skoru, neyi ölçtüğü sorulmadan
 yorumlanamaz.**
